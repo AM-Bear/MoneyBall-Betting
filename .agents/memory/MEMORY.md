@@ -1,0 +1,1 @@
+- [Background scheduler constraints](background-scheduler-constraints.md) — pick snapshot/grading runs in-process; production must be always-on (or use a scheduled job) or the ledger misses days.

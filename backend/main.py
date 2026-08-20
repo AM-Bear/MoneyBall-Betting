@@ -135,9 +135,41 @@ async def grade_pending_records() -> dict[str, int]:
 GRADE_INTERVAL_SECONDS = max(int(os.getenv("GRADE_INTERVAL_SECONDS", "1800")), 60)
 
 
+async def snapshot_live_slate() -> bool:
+    """Persist today's live slate so the record never depends on a page visit.
+
+    Returns True when a snapshot write ran; ON CONFLICT guards in
+    store_slate_snapshot make repeated runs idempotent.
+    """
+    if not await asyncio.to_thread(database_available):
+        return False
+    data = await get_slate()
+    if data.get("mode") != "live":
+        return False
+    return await asyncio.to_thread(store_slate_snapshot, data)
+
+
 async def grade_scheduler() -> None:
-    """Grade pending picks on a fixed cadence; failures are logged and retried next cycle."""
+    """Snapshot today's slate and grade pending picks on a fixed cadence.
+
+    Failures in either step are logged and retried next cycle.
+    """
     while True:
+        try:
+            persisted = await snapshot_live_slate()
+            logger.info(
+                "record_autosnapshot persisted=%s next_run_s=%s",
+                persisted,
+                GRADE_INTERVAL_SECONDS,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning(
+                "record_autosnapshot_failed retry_in_s=%s",
+                GRADE_INTERVAL_SECONDS,
+                exc_info=True,
+            )
         try:
             result = await grade_pending_records()
             logger.info(
