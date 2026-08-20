@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "MONEYLINE"
+description = "A staged placeholder for the MONEYLINE baseball statistical research terminal, awaiting its uploaded project files and build specification."
+version = "1.0.0"
+id = "artifacts/moneyline"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 18612
+
+[services.development]
+run = "pnpm --filter @workspace/moneyline run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/moneyline", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/moneyline/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "18612"
+BASE_PATH = "/"
