@@ -1,0 +1,8 @@
+huggingface_hub
+pandas
+scikit-learn
+joblib
+fastapi
+httpx
+psycopg[binary]
+uvicorn

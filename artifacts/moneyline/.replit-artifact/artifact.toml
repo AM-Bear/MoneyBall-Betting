@@ -1,7 +1,7 @@
 kind = "web"
 previewPath = "/"
 title = "MONEYLINE"
-description = "A staged placeholder for the MONEYLINE baseball statistical research terminal, awaiting its uploaded project files and build specification."
+description = "A production Moneyball trading desk that prices baseball teams with verified chronological regression models, live MLB data, transparent odds math, and an append-only graded record."
 version = "1.0.0"
 id = "artifacts/moneyline"
 router = "path"
@@ -14,14 +14,20 @@ localPort = 18612
 [services.development]
 run = "pnpm --filter @workspace/moneyline run dev"
 
-[services.production]
-build = [ "pnpm", "--filter", "@workspace/moneyline", "run", "build" ]
-serve = "static"
-publicDir = "artifacts/moneyline/dist/public"
+[services.production.build]
+args = ["pnpm", "--filter", "@workspace/moneyline", "run", "build:production"]
 
-[[services.production.rewrites]]
-from = "/*"
-to = "/index.html"
+[services.production.build.env]
+NODE_ENV = "production"
+
+[services.production.run]
+args = ["pnpm", "--filter", "@workspace/moneyline", "run", "start"]
+
+[services.production.run.env]
+NODE_ENV = "production"
+
+[services.production.health.startup]
+path = "/api/health"
 
 [services.env]
 PORT = "18612"

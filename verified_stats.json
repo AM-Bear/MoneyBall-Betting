@@ -1,0 +1,100 @@
+{
+  "dataset": {
+    "rows": 1232,
+    "years": [
+      1962,
+      2012
+    ],
+    "train_rows": 902,
+    "test_rows": 330,
+    "split": "train <= 2001, test >= 2002"
+  },
+  "rs_model": {
+    "intercept": -804.6,
+    "coef_OBP": 2737.8,
+    "coef_SLG": 1584.9,
+    "r2_train": 0.93,
+    "r2_test": 0.882
+  },
+  "ba_paradox": {
+    "coef_OBP": 2917.4,
+    "coef_SLG": 1637.9,
+    "coef_BA": -369.0,
+    "r2_train": 0.93,
+    "ba_negative": true
+  },
+  "ra_model": {
+    "train_rows": 90,
+    "train_years": [
+      1999,
+      2001
+    ],
+    "intercept": -837.4,
+    "coef_OOBP": 2913.6,
+    "coef_OSLG": 1514.3,
+    "r2_test": 0.882
+  },
+  "wins_model": {
+    "intercept": 80.88,
+    "coef_RD": 0.1058,
+    "r2_test": 0.876,
+    "mae_test_wins": 3.25
+  },
+  "playoff_model": {
+    "accuracy_test": 0.894,
+    "majority_baseline": 0.727,
+    "test_base_rate_playoffs": 0.273,
+    "calibration": [
+      {
+        "bucket": "50-60%",
+        "n": 17,
+        "actual_rate": 0.765
+      },
+      {
+        "bucket": "60-70%",
+        "n": 12,
+        "actual_rate": 1.0
+      },
+      {
+        "bucket": "70-100%",
+        "n": 34,
+        "actual_rate": 1.0
+      }
+    ]
+  },
+  "oak_2002_chain": {
+    "inputs": {
+      "OBP": 0.339,
+      "SLG": 0.432,
+      "OOBP": 0.315,
+      "OSLG": 0.384
+    },
+    "predicted": {
+      "RS": 808,
+      "RA": 662,
+      "W": 96.4,
+      "playoff_prob": 0.764
+    },
+    "actual": {
+      "RS": 800,
+      "RA": 654,
+      "W": 103,
+      "Playoffs": 1
+    }
+  },
+  "odds_checks": {
+    "p60_to_ml": -150,
+    "ml_minus150_to_p": 0.6,
+    "ml_plus130_to_p": 0.435
+  },
+  "prior_join": {
+    "test_rows": 330,
+    "with_prior": 326,
+    "missing_teams": [
+      "LAA",
+      "MIA",
+      "TBR",
+      "WSN"
+    ]
+  }
+}

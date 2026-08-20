@@ -1,0 +1,131 @@
+{
+  "assumptions": {
+    "starting_bankroll": 1000,
+    "unit_size": 1,
+    "vig": "none \u2014 educational paper simulation",
+    "market_prior": "previous season wins",
+    "model_selection": "predicted wins at least 5 above prior",
+    "baseline_selection": "previous-season 90+ win teams",
+    "prior_join_rows": 330,
+    "franchise_bridges": [
+      "ANA\u2192LAA",
+      "FLA\u2192MIA",
+      "TBD\u2192TBR",
+      "MON\u2192WSN"
+    ]
+  },
+  "model": {
+    "curve": [
+      {
+        "year": 2002,
+        "bankroll": 1000.0
+      },
+      {
+        "year": 2002,
+        "bankroll": 999.0
+      },
+      {
+        "year": 2003,
+        "bankroll": 993.0
+      },
+      {
+        "year": 2004,
+        "bankroll": 989.0
+      },
+      {
+        "year": 2005,
+        "bankroll": 983.0
+      },
+      {
+        "year": 2006,
+        "bankroll": 983.0
+      },
+      {
+        "year": 2007,
+        "bankroll": 984.0
+      },
+      {
+        "year": 2008,
+        "bankroll": 983.0
+      },
+      {
+        "year": 2009,
+        "bankroll": 980.0
+      },
+      {
+        "year": 2010,
+        "bankroll": 978.0
+      },
+      {
+        "year": 2011,
+        "bankroll": 977.0
+      },
+      {
+        "year": 2012,
+        "bankroll": 978.0
+      }
+    ],
+    "bets": 96,
+    "wins": 37,
+    "hit_rate": 0.385,
+    "units": -22.0,
+    "roi": -0.229
+  },
+  "baseline": {
+    "curve": [
+      {
+        "year": 2002,
+        "bankroll": 1000.0
+      },
+      {
+        "year": 2002,
+        "bankroll": 1002.0
+      },
+      {
+        "year": 2003,
+        "bankroll": 1003.0
+      },
+      {
+        "year": 2004,
+        "bankroll": 1003.0
+      },
+      {
+        "year": 2005,
+        "bankroll": 1005.0
+      },
+      {
+        "year": 2006,
+        "bankroll": 1002.0
+      },
+      {
+        "year": 2007,
+        "bankroll": 998.0
+      },
+      {
+        "year": 2008,
+        "bankroll": 996.0
+      },
+      {
+        "year": 2009,
+        "bankroll": 996.0
+      },
+      {
+        "year": 2010,
+        "bankroll": 993.0
+      },
+      {
+        "year": 2011,
+        "bankroll": 992.0
+      },
+      {
+        "year": 2012,
+        "bankroll": 991.0
+      }
+    ],
+    "bets": 87,
+    "wins": 39,
+    "hit_rate": 0.448,
+    "units": -9.0,
+    "roi": -0.103
+  }
+}

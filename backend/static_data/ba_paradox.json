@@ -1,0 +1,27 @@
+{
+  "base": {
+    "features": [
+      "OBP",
+      "SLG"
+    ],
+    "coefficients": {
+      "OBP": 2737.8,
+      "SLG": 1584.9
+    },
+    "r2_train": 0.93
+  },
+  "with_ba": {
+    "features": [
+      "OBP",
+      "SLG",
+      "BA"
+    ],
+    "coefficients": {
+      "OBP": 2917.4,
+      "SLG": 1637.9,
+      "BA": -369.0
+    },
+    "r2_train": 0.93
+  },
+  "caption": "Once OBP and SLG are known, BA adds no positive predictive signal in this fit."
+}
