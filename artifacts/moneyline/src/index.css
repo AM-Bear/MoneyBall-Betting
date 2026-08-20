@@ -103,4 +103,19 @@
     content: '';
     @apply h-px bg-border flex-1;
   }
+  .moneyline-percentile-track {
+    /* Spec: thin 4px tracks in #1f2530 with the pool median ticked. */
+    @apply h-1 bg-border relative w-full;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { useBaParadox } from "@/api";
+import { Link } from "wouter";
+import { useBaParadox, useLiveSeason } from "@/api";
 import { Switch } from "./ui/switch";
 import { cn } from "@/lib/utils";
 import { PanelSkeleton, PanelError } from "./layout";
 
 export function BaParadoxPanel() {
   const { data, isLoading, error } = useBaParadox();
+  const liveSeason = useLiveSeason();
   const [showBa, setShowBa] = useState(false);
 
   if (isLoading) return <PanelSkeleton />;
@@ -73,6 +75,14 @@ export function BaParadoxPanel() {
 
         <div className="mt-4 text-center text-muted-foreground font-mono text-xs italic">
           {data.caption}
+        </div>
+
+        <div className="text-center font-mono text-[10px] text-success/80">
+          THIS IS THE WOULD-BEANE-BUY TEST: a {liveSeason ?? "current-season"} player whose OBP percentile towers over his BA percentile is
+          exactly what this regression says the market misprices —{" "}
+          <Link href="/players" className="underline underline-offset-2 hover:text-success">
+            FIND ONE IN THE PLAYER DESK →
+          </Link>
         </div>
       </div>
     </div>

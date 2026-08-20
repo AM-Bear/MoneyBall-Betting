@@ -9,7 +9,7 @@ import asyncio
 from typing import Any
 
 from backend.analytics import (
-    MWAA_LABEL,
+    mwaa_label,
     beane_badge,
     hitter_run_value,
     percentile,
@@ -17,17 +17,21 @@ from backend.analytics import (
     runs_per_win_receipt,
 )
 from backend.feeds import (
+    current_season,
     get_league_pool_context,
     get_player_pool,
     get_standings,
 )
 from backend.odds import probability_to_moneyline
 
-SALARY_NOTE = (
-    "No 2026 salary data exists on keyless endpoints, so the desk shows no "
-    "salary figures. The Player Desk may accept a USER-SUPPLIED number for "
-    "$/mWAA math on the user's own responsibility."
-)
+
+def salary_note() -> str:
+    """Built per request — the season is the backend clock, never a literal."""
+    return (
+        f"No {current_season()} salary data exists on keyless endpoints, so the "
+        "desk shows no salary figures. The Player Desk may accept a "
+        "USER-SUPPLIED number for $/mWAA math on the user's own responsibility."
+    )
 
 
 async def search_players(
@@ -78,9 +82,9 @@ async def build_player_card(player_id: int) -> dict[str, Any] | None:
         "name": (hitter or pitcher)["name"],
         "team": (hitter or pitcher)["team_name"],
         "position": (hitter or pitcher)["position"],
-        "salary": {"available": False, "note": SALARY_NOTE},
+        "salary": {"available": False, "note": salary_note()},
         "runs_per_win_receipt": runs_per_win_receipt(),
-        "metric_label": MWAA_LABEL,
+        "metric_label": mwaa_label(current_season()),
     }
 
     if hitter is not None:
@@ -110,6 +114,7 @@ async def build_player_card(player_id: int) -> dict[str, Any] | None:
             context["league_obp"],
             context["league_slg"],
             context["league_team_pa"],
+            current_season(),
         )
         strength_with = (baseline_runs + value["delta_rs"]) ** 2 / (
             (baseline_runs + value["delta_rs"]) ** 2 + baseline_runs**2
@@ -123,7 +128,7 @@ async def build_player_card(player_id: int) -> dict[str, Any] | None:
             "qualified": player_id in qualified_ids,
             "percentiles": percentiles,
             "percentile_note": (
-                "Percentiles are computed live vs the 2026 qualified pool; "
+                f"Percentiles are computed live vs the {current_season()} qualified pool; "
                 "K% is inverted so higher is always better."
             ),
             "model": value,
@@ -177,6 +182,7 @@ async def build_player_card(player_id: int) -> dict[str, Any] | None:
             context["league_obp_against"],
             context["league_slg_against"],
             context["league_team_ip"],
+            current_season(),
         )
         strength_with = baseline_runs**2 / (
             baseline_runs**2 + (baseline_runs + (value["delta_ra"] or 0.0)) ** 2
@@ -192,7 +198,7 @@ async def build_player_card(player_id: int) -> dict[str, Any] | None:
             "qualified": player_id in qualified_ids,
             "percentiles": percentiles,
             "percentile_note": (
-                "Percentiles are computed live vs the 2026 qualified pool; rate "
+                f"Percentiles are computed live vs the {current_season()} qualified pool; rate "
                 "stats are inverted so higher is always better."
             ),
             "model": value,

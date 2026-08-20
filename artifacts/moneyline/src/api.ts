@@ -119,6 +119,124 @@ export function useLiveRecord() {
   });
 }
 
+// ---- v2: live research floor ----
+
+/** The live season is a backend contract (server clock), never a hardcoded
+ *  year — every label and live-mode check derives from this. */
+export function useLiveSeason(): number | undefined {
+  const { data } = useTeamsLive();
+  return data?.season;
+}
+
+export function useTeamsLive() {
+  return useQuery({
+    queryKey: ['teams-live'],
+    queryFn: () => fetchApi<{ season: number; teams: { team_id: number; team: string; name: string; label: string; wins: number; losses: number; games_played: number }[] }>('/teams-live'),
+    staleTime: 10 * 60 * 1000,
+    retry: 1,
+  });
+}
+
+export function usePlayers(group: 'hitting' | 'pitching', pool: 'qualified' | 'all', q: string, enabled = true) {
+  return useQuery({
+    queryKey: ['players', group, pool, q],
+    queryFn: () => fetchApi<any>(`/players?group=${group}&pool=${pool}${q ? `&q=${encodeURIComponent(q)}` : ''}`),
+    enabled,
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  });
+}
+
+export function usePlayerCard(playerId: number | null) {
+  return useQuery({
+    queryKey: ['player', playerId],
+    queryFn: () => fetchApi<any>(`/player/${playerId}`),
+    enabled: playerId != null,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+}
+
+export function useComparePlayers(a: number | null, b: number | null) {
+  return useQuery({
+    queryKey: ['compare', a, b],
+    queryFn: () => fetchApi<any>(`/compare/players?a=${a}&b=${b}`),
+    enabled: a != null && b != null && a !== b,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+}
+
+export function useTeamLive(teamId: number | null) {
+  return useQuery({
+    queryKey: ['team-live', teamId],
+    queryFn: () => fetchApi<any>(`/team-live/${teamId}`),
+    enabled: teamId != null,
+    staleTime: 10 * 60 * 1000,
+    retry: 1,
+  });
+}
+
+/** Query-flavored /api/price for the live Team Pricer (deterministic on inputs). */
+export function usePriceInputs(inputs: { obp: number; slg: number; oobp?: number | null; oslg?: number | null } | null) {
+  return useQuery({
+    queryKey: ['price-inputs', inputs],
+    queryFn: () => fetchApi<any>('/price', { method: 'POST', body: JSON.stringify(inputs) }),
+    enabled: inputs != null,
+    staleTime: 10 * 60 * 1000,
+    retry: 1,
+  });
+}
+
+export function useParlayPrice() {
+  return useMutation({
+    mutationFn: (payload: { legs: { gamePk: string; side: 'home' | 'away' }[]; book_odds: number | null }) =>
+      fetchApi<any>('/parlay/price', { method: 'POST', body: JSON.stringify(payload) }),
+  });
+}
+
+export function useParlayLog() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { legs: { gamePk: string; side: 'home' | 'away' }[]; book_odds: number | null }) =>
+      fetchApi<any>('/parlay/log', { method: 'POST', body: JSON.stringify(payload) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['record'] });
+    },
+  });
+}
+
+export function useSeasonSim(enabled = true) {
+  return useQuery({
+    queryKey: ['season-sim'],
+    queryFn: () => fetchApi<any>('/season-sim'),
+    enabled,
+    staleTime: 10 * 60 * 1000,
+    retry: 1,
+  });
+}
+
+export function useTeamOutlook(teamId: number | null) {
+  return useQuery({
+    queryKey: ['team-outlook', teamId],
+    queryFn: () => fetchApi<any>(`/season-sim/team/${teamId}`),
+    enabled: teamId != null,
+    staleTime: 10 * 60 * 1000,
+    retry: 1,
+  });
+}
+
+export function useWire(team: string | null, types: string[], limit = 120) {
+  const typeParam = types.length ? `&types=${types.join(',')}` : '';
+  const teamParam = team ? `&team=${team}` : '';
+  return useQuery({
+    queryKey: ['wire', team, types.join(','), limit],
+    queryFn: () => fetchApi<any>(`/wire?limit=${limit}${teamParam}${typeParam}`),
+    refetchInterval: 10 * 60 * 1000,
+    retry: 1,
+  });
+}
+
 export function useGradeRecord() {
   const queryClient = useQueryClient();
   return useMutation({

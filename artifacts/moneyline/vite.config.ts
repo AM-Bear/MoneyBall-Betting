@@ -5,29 +5,28 @@ import { defineConfig } from 'vite';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
+// PORT is only needed when vite actually serves (dev / preview). Production
+// builds run in the deploy pipeline without a PORT, so only enforce it there.
 const rawPort = process.env.PORT;
+const port = rawPort ? Number(rawPort) : undefined;
 
-if (!rawPort) {
-  throw new Error(
-    'PORT environment variable is required but was not provided.',
-  );
-}
-
-const port = Number(rawPort);
-
-if (Number.isNaN(port) || port <= 0) {
+if (rawPort && (Number.isNaN(port) || (port as number) <= 0)) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
 }
 
-const basePath = process.env.BASE_PATH;
-
-if (!basePath) {
-  throw new Error(
-    'BASE_PATH environment variable is required but was not provided.',
-  );
+function requirePort(command: string): number {
+  if (port == null) {
+    throw new Error(
+      `PORT environment variable is required for "vite ${command}" but was not provided.`,
+    );
+  }
+  return port;
 }
 
-export default defineConfig({
+// The app is served at the root path in production; BASE_PATH can override.
+const basePath = process.env.BASE_PATH || '/';
+
+export default defineConfig(async ({ command, isPreview }) => ({
   base: basePath,
   plugins: [
     react(),
@@ -47,6 +46,25 @@ export default defineConfig({
         ]
       : []),
   ],
+  server:
+    command === 'serve' && !isPreview
+      ? {
+          port: requirePort('dev'),
+          strictPort: true,
+          host: '0.0.0.0' as const,
+          allowedHosts: true as const,
+          fs: {
+            strict: true,
+          },
+        }
+      : undefined,
+  preview: isPreview
+    ? {
+        port: requirePort('preview'),
+        host: '0.0.0.0' as const,
+        allowedHosts: true as const,
+      }
+    : undefined,
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, 'src'),
@@ -64,18 +82,4 @@ export default defineConfig({
     outDir: path.resolve(import.meta.dirname, 'dist/public'),
     emptyOutDir: true,
   },
-  server: {
-    port,
-    strictPort: true,
-    host: '0.0.0.0',
-    allowedHosts: true,
-    fs: {
-      strict: true,
-    },
-  },
-  preview: {
-    port,
-    host: '0.0.0.0',
-    allowedHosts: true,
-  },
-});
+}));

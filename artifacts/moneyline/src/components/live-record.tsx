@@ -89,26 +89,65 @@ export function LiveRecordPanel() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Stats & Chart */}
         <div className="md:col-span-2 flex flex-col gap-4">
-          <div className="flex items-end gap-6 bg-background border border-border p-4 font-mono">
-            <div className="flex flex-col">
-              <span className="text-[10px] text-muted-foreground uppercase">Record</span>
-              <span className="text-3xl font-bold text-primary tracking-tighter">
-                {data.wins}–{data.losses}
-              </span>
+          {/* Dual-price grading: SEASON and ADJ side by side */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="flex items-end gap-6 bg-background border border-border p-4 font-mono">
+              <div className="flex flex-col">
+                <span className="text-[10px] text-muted-foreground uppercase">Season Record</span>
+                <span className="text-3xl font-bold text-primary tracking-tighter">
+                  {data.wins}–{data.losses}
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] text-muted-foreground uppercase">Win Rate</span>
+                <span className="text-2xl font-bold tracking-tighter">
+                  {data.hit_rate !== null ? (data.hit_rate * 100).toFixed(1) : "0.0"}%
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] text-muted-foreground uppercase">Units (Flat -110)</span>
+                <span className="text-2xl font-bold tracking-tighter text-success">
+                  {data.units_pnl > 0 ? "+" : ""}{data.units_pnl.toFixed(2)}u
+                </span>
+              </div>
             </div>
-            <div className="flex flex-col">
-              <span className="text-[10px] text-muted-foreground uppercase">Win Rate</span>
-              <span className="text-2xl font-bold tracking-tighter">
-                {data.hit_rate !== null ? (data.hit_rate * 100).toFixed(1) : "0.0"}%
-              </span>
-            </div>
-            <div className="flex flex-col">
-              <span className="text-[10px] text-muted-foreground uppercase">Units (Flat -110)</span>
-              <span className="text-2xl font-bold tracking-tighter text-success">
-                {data.units_pnl > 0 ? "+" : ""}{data.units_pnl.toFixed(2)}u
-              </span>
+
+            <div className="flex flex-col justify-between bg-background border border-warning/30 p-4 font-mono gap-2">
+              <div className="flex items-end gap-6">
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-warning uppercase">ADJ Record</span>
+                  <span className="text-3xl font-bold text-warning tracking-tighter">
+                    {data.adj_record ? `${data.adj_record.wins}–${data.adj_record.losses}` : "—"}
+                  </span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-muted-foreground uppercase">Win Rate</span>
+                  <span className="text-2xl font-bold tracking-tighter">
+                    {data.adj_record?.hit_rate != null ? `${(data.adj_record.hit_rate * 100).toFixed(1)}%` : "—"}
+                  </span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-muted-foreground uppercase">Units</span>
+                  <span className="text-2xl font-bold tracking-tighter">
+                    {data.adj_record?.units_pnl != null ? `${data.adj_record.units_pnl > 0 ? "+" : ""}${data.adj_record.units_pnl.toFixed(2)}u` : "—"}
+                  </span>
+                </div>
+              </div>
+              {data.adj_record?.note && (
+                <span className="text-[9px] text-muted-foreground leading-tight">{data.adj_record.note}</span>
+              )}
             </div>
           </div>
+
+          {data.parlay_record && (
+            <div className="bg-background border border-border px-4 py-2 font-mono text-xs flex flex-wrap items-center gap-4">
+              <span className="text-[10px] text-muted-foreground uppercase">Paper Parlays</span>
+              <span className="font-bold text-primary">{data.parlay_record.line}</span>
+              <span className="text-muted-foreground text-[10px]">
+                {data.parlay_record.slips} SLIP{data.parlay_record.slips === 1 ? "" : "S"} LOGGED · GRADED ALL-OR-NOTHING
+              </span>
+            </div>
+          )}
 
           <div className="h-64 border border-border bg-background p-2">
             <ResponsiveContainer width="100%" height="100%">
@@ -151,6 +190,16 @@ export function LiveRecordPanel() {
                     <span className="text-[9px] text-muted-foreground">{entry.game_date}</span>
                     <span className="font-bold">{entry.pick_team}</span>
                     <span className="text-[10px] text-primary">{formatProb(entry.model_probability)}</span>
+                    {entry.adj_pick_team && (
+                      <span className="text-[9px] text-warning">
+                        ADJ {entry.adj_pick_team} {formatProb(entry.adj_probability)}
+                        {entry.adj_result && (
+                          <span className={entry.adj_result === "WIN" ? " text-success" : entry.adj_result === "LOSS" ? " text-destructive" : ""}>
+                            {" "}· {entry.adj_result.charAt(0)}
+                          </span>
+                        )}
+                      </span>
+                    )}
                   </div>
                   <div>
                     {entry.result === "WIN" ? (

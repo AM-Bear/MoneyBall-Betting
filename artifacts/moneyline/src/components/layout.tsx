@@ -1,8 +1,10 @@
 import { cn } from "@/lib/utils";
 import { Badge } from "./ui/badge";
 import { Loader2 } from "lucide-react";
+import { useLiveSeason } from "@/api";
 
 export function TerminalBoot({ loaded, error }: { loaded: boolean; error?: Error | null }) {
+  const liveSeason = useLiveSeason();
   if (loaded) return null;
 
   return (
@@ -29,7 +31,11 @@ export function TerminalBoot({ loaded, error }: { loaded: boolean; error?: Error
               <span>FITTING 1962–2001...</span>
               <span className="text-success">OK</span>
             </div>
-            <div className="flex justify-between animate-in fade-in fill-mode-forwards duration-500 delay-600">
+            <div className="flex justify-between animate-in fade-in fill-mode-forwards duration-500 delay-500">
+              <span>SYNCING {liveSeason ?? "LIVE"} FEEDS...</span>
+              <span className="text-success">OK</span>
+            </div>
+            <div className="flex justify-between animate-in fade-in fill-mode-forwards duration-500 delay-700">
               <span className="flex items-center gap-2"><Loader2 className="w-3 h-3 animate-spin" /> PRICING SLATE...</span>
               <span className="text-muted-foreground">WAIT</span>
             </div>

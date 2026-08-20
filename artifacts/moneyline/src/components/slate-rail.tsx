@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
 import { Badge } from "./ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 export function formatOdds(odds: number | null | undefined): string {
   if (odds == null) return "—";
@@ -27,25 +28,70 @@ export interface SlateGame {
     away: number | null;
     home: number | null;
   };
+  probables?: {
+    away: { player_id: number; name: string } | null;
+    home: { player_id: number; name: string } | null;
+  };
+  adj_prob?: number | null;
+  adj_fair_lines?: { away: number | null; home: number | null } | null;
+  adj_detail?: any;
+  flags?: {
+    team: string;
+    player_id: number;
+    player: string;
+    status: string;
+    playing_time_rank?: { metric: string; value: number; rank: number };
+    source?: string;
+    tooltip?: string;
+  }[];
+  time_et?: string;
   badges?: string[];
   status?: string;
 }
 
-export function SlateRail({ 
-  games, 
+function ProbableLine({
+  side,
+  game,
+  onSelectProbable,
+}: {
+  side: "away" | "home";
+  game: SlateGame;
+  onSelectProbable?: (playerId: number) => void;
+}) {
+  const probable = game.probables?.[side];
+  if (!probable) return null;
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelectProbable?.(probable.player_id);
+      }}
+      title={`${probable.name} — open in Player Desk`}
+      className="text-[9px] font-mono text-muted-foreground hover:text-primary hover:underline underline-offset-2 truncate max-w-full text-left transition-colors"
+    >
+      P: {probable.name}
+    </button>
+  );
+}
+
+export function SlateRail({
+  games,
   onSelectGame,
+  onSelectProbable,
   mode = "live"
-}: { 
+}: {
   games: SlateGame[];
   onSelectGame: (game: SlateGame) => void;
+  onSelectProbable?: (playerId: number) => void;
   mode?: "live" | "historical";
 }) {
   return (
-    <div className="w-full lg:w-64 border-r border-border bg-card flex flex-col h-full overflow-hidden shrink-0">
+    <div className="w-full lg:w-72 border-r border-border bg-card flex flex-col h-full overflow-hidden shrink-0">
       <div className="p-3 border-b border-border shrink-0 flex items-center justify-between">
         <span className="moneyline-section-header w-full">SLATE</span>
       </div>
-      
+
       {mode === "historical" && (
         <div className="bg-warning/10 border-b border-warning/30 p-2 text-xs font-mono text-warning text-center">
           HISTORICAL MODE
@@ -54,31 +100,81 @@ export function SlateRail({
 
       <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
         {games.map((game, i) => (
-          <button
+          <div
             key={`${game.away}-${game.home}-${i}`}
+            role="button"
+            tabIndex={0}
             onClick={() => onSelectGame(game)}
-            className="text-left bg-background border border-border p-2 hover:border-primary transition-colors group flex flex-col gap-2 relative overflow-hidden"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelectGame(game);
+              }
+            }}
+            className="text-left bg-background border border-border p-2 hover:border-primary transition-colors group flex flex-col gap-1.5 relative overflow-hidden cursor-pointer focus-visible:outline focus-visible:outline-1 focus-visible:outline-primary"
           >
             <div className="absolute top-0 right-0 w-1 h-full bg-muted group-hover:bg-primary/50 transition-colors" />
-            
+
             {mode === "historical" && game.status && (
               <div className="text-[9px] text-muted-foreground uppercase">{game.status}</div>
             )}
+            {mode === "live" && (game.time_et || game.status) && (
+              <div className="flex justify-between text-[9px] text-muted-foreground uppercase">
+                <span>{game.time_et}</span>
+                <span>{game.status}</span>
+              </div>
+            )}
 
-            <div className="flex justify-between items-center text-sm font-mono tabular-nums">
-              <span className="font-bold">{game.away}</span>
-              <span className="text-muted-foreground">{formatOdds(game.fair_lines.away)}</span>
-            </div>
-            
-            <div className="flex justify-between items-center text-sm font-mono tabular-nums">
-              <span className="font-bold flex items-center gap-1">
-                <span className="text-[10px] text-muted-foreground">@</span>
-                {game.home}
-              </span>
-              <span className="text-muted-foreground">{formatOdds(game.fair_lines.home)}</span>
+            <div className="flex flex-col">
+              <div className="flex justify-between items-center text-sm font-mono tabular-nums">
+                <span className="font-bold">{game.away}</span>
+                <span className="text-muted-foreground">{formatOdds(game.fair_lines.away)}</span>
+              </div>
+              <ProbableLine side="away" game={game} onSelectProbable={onSelectProbable} />
             </div>
 
-            <div className="flex justify-between items-end mt-1 pt-2 border-t border-border/50">
+            <div className="flex flex-col">
+              <div className="flex justify-between items-center text-sm font-mono tabular-nums">
+                <span className="font-bold flex items-center gap-1">
+                  <span className="text-[10px] text-muted-foreground">@</span>
+                  {game.home}
+                </span>
+                <span className="text-muted-foreground">{formatOdds(game.fair_lines.home)}</span>
+              </div>
+              <ProbableLine side="home" game={game} onSelectProbable={onSelectProbable} />
+            </div>
+
+            {game.adj_fair_lines && (
+              <div className="flex justify-between items-center text-[10px] font-mono tabular-nums text-warning border-t border-warning/20 pt-1">
+                <span className="uppercase tracking-wide">ADJ</span>
+                <span>
+                  {formatOdds(game.adj_fair_lines.away)} / {formatOdds(game.adj_fair_lines.home)}
+                </span>
+              </div>
+            )}
+
+            {(game.flags?.length || 0) > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {game.flags!.map((flag, fi) => (
+                  <Tooltip key={fi}>
+                    <TooltipTrigger asChild>
+                      <span
+                        onClick={(e) => e.stopPropagation()}
+                        className="inline-flex items-center border border-destructive/40 bg-destructive/10 text-destructive text-[8px] font-mono px-1 py-0 uppercase cursor-help"
+                      >
+                        {flag.team} IL: {flag.player}
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent className="font-mono text-xs max-w-64 rounded-none">
+                      {flag.tooltip ||
+                        `${flag.player} — ${flag.status}. #${flag.playing_time_rank?.rank} on the club by ${flag.playing_time_rank?.metric}. Context only — never moves a price.`}
+                    </TooltipContent>
+                  </Tooltip>
+                ))}
+              </div>
+            )}
+
+            <div className="flex justify-between items-end mt-0.5 pt-1.5 border-t border-border/50">
               <div className="flex gap-1">
                 {game.badges?.map(b => (
                   <Badge key={b} variant="value" className="text-[9px] px-1 py-0 h-4 whitespace-nowrap">
@@ -86,13 +182,16 @@ export function SlateRail({
                   </Badge>
                 ))}
               </div>
-              {game.model_prob_home != null && (
-                <span className="text-xs text-primary font-mono">
-                  {formatProb(game.model_prob_home)} H
-                </span>
-              )}
+              <span className="text-xs text-primary font-mono flex items-center gap-2">
+                {game.adj_prob != null && (
+                  <span className="text-warning" title="Starter-blended (ADJ) home probability">
+                    {formatProb(game.adj_prob)} A
+                  </span>
+                )}
+                {game.model_prob_home != null && <span>{formatProb(game.model_prob_home)} H</span>}
+              </span>
             </div>
-          </button>
+          </div>
         ))}
         {games.length === 0 && (
           <div className="text-center p-4 text-muted-foreground font-mono text-sm">

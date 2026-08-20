@@ -22,17 +22,23 @@ export function EdgeFinder({
   teamAStats,
   teamALabel,
   activeSlateGame,
+  overrideB,
+  contextSlot,
 }: {
   teamAStats: any;
   teamALabel: string;
   activeSlateGame?: any;
+  /** H2H teams mode: fixed opponent inputs/label instead of the picker. */
+  overrideB?: { inputs: any; label: string } | null;
+  /** Extra context rendered above the verdict (starter context, IL flags). */
+  contextSlot?: React.ReactNode;
 }) {
   const [lineA, setLineA] = useState<string>("");
   const [lineB, setLineB] = useState<string>("");
   const [teamBId, setTeamBId] = useState<{team: string, year: number}>({ team: "NYY", year: 2002 });
   
   const { data: teamsData } = useTeams();
-  const teamBData = useTeamPrice(teamBId.team, teamBId.year);
+  const teamBData = useTeamPrice(overrideB ? "" : teamBId.team, teamBId.year);
   const matchup = useMatchup();
 
   useEffect(() => {
@@ -48,6 +54,10 @@ export function EdgeFinder({
       inputsB = activeSlateGame.home_inputs;
       labelA = activeSlateGame.away_name || activeSlateGame.away;
       labelB = activeSlateGame.home_name || activeSlateGame.home;
+    } else if (overrideB) {
+      if (!teamAStats || !overrideB.inputs) return;
+      inputsA = teamAStats;
+      inputsB = overrideB.inputs;
     } else {
       if (!teamAStats || !teamBData.data?.inputs) return;
       inputsA = teamAStats;
@@ -73,13 +83,17 @@ export function EdgeFinder({
     };
     
     matchup.mutate(payload);
-  }, [teamAStats, teamBData.data, lineA, lineB, activeSlateGame]);
+  }, [teamAStats, teamBData.data, lineA, lineB, activeSlateGame, overrideB?.inputs]);
 
   const result = matchup.data;
-  const isLoading = matchup.isPending || (teamBData.isLoading && !activeSlateGame);
+  const isLoading = matchup.isPending || (teamBData.isLoading && !activeSlateGame && !overrideB);
   
   const labelA = activeSlateGame ? (activeSlateGame.away_name || activeSlateGame.away) : teamALabel;
-  const labelB = activeSlateGame ? (activeSlateGame.home_name || activeSlateGame.home) : `${teamBId.team} ${teamBId.year}`;
+  const labelB = activeSlateGame
+    ? (activeSlateGame.home_name || activeSlateGame.home)
+    : overrideB
+      ? overrideB.label
+      : `${teamBId.team} ${teamBId.year}`;
 
   const verdictVariant = 
     result?.verdict === "VALUE" ? "value" :
@@ -116,7 +130,7 @@ export function EdgeFinder({
           
           <div className="flex flex-col gap-2 p-3 bg-background border border-border">
             <div className="text-xs font-mono font-bold truncate h-6 relative group">
-              {activeSlateGame ? labelB : (
+              {(activeSlateGame || overrideB) ? labelB : (
                 <select 
                   className="w-full bg-transparent outline-none appearance-none cursor-pointer truncate pr-4 text-muted-foreground hover:text-foreground transition-colors"
                   value={`${teamBId.team} ${teamBId.year}`}
@@ -152,8 +166,10 @@ export function EdgeFinder({
           </div>
         )}
 
+        {contextSlot}
+
         {/* Verdict Area */}
-        <div className="flex-1 border border-border bg-background p-4 flex flex-col items-center justify-center text-center relative overflow-hidden">
+        <div aria-live="polite" className="flex-1 border border-border bg-background p-4 flex flex-col items-center justify-center text-center relative overflow-hidden">
           {isLoading && !result && (
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground absolute" />
           )}

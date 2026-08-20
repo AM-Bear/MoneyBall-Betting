@@ -1,2 +1,5 @@
 - [Background scheduler constraints](background-scheduler-constraints.md) — pick snapshot/grading runs in-process; production must be always-on (or use a scheduled job) or the ledger misses days.
 - [MONEYLINE backend conventions](moneyline-conventions.md) — B-Ref team codes via TEAM_CODES only; doctrine: context never moves a price; MLB API quirks; smoke_test.py is the gate.
+- [Hidden backend errors](hidden-backend-errors.md) — feed routes convert every exception to 503 feed_unavailable; read API logs for the traceback before blaming the upstream feed.
+- [Frontend build env constraints](frontend-build-env-constraints.md) — vite config must not hard-require PORT/BASE_PATH at build time; deploy builds run without service env vars.
+- [Live season contract](live-season-contract.md) — the live year comes from /api/teams-live season, never hardcoded in UI copy, params, or route validation.

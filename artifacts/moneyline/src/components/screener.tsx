@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useScreener } from "@/api";
+import { useLiveSeason, useScreener } from "@/api";
 import { PanelSkeleton, PanelError } from "./layout";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
@@ -9,9 +9,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 export function ScreenerPanel() {
   const [year, setYear] = useState(2002);
   const { data, isLoading, error } = useScreener(year);
+  const liveSeason = useLiveSeason();
 
-  // Generate year options 1962-2012
-  const years = Array.from({ length: 51 }, (_, i) => 2012 - i);
+  // Live season (so far) first — sourced from the backend clock, never
+  // hardcoded — then the historical seasons 2012 → 1962.
+  const years = [
+    ...(liveSeason ? [liveSeason] : []),
+    ...Array.from({ length: 51 }, (_, i) => 2012 - i),
+  ];
 
   const handleExport = () => {
     if (!data?.rows) return;
@@ -57,7 +62,7 @@ export function ScreenerPanel() {
             <SelectContent className="rounded-none">
               {years.map(y => (
                 <SelectItem key={y} value={y.toString()} className="font-mono text-xs rounded-none">
-                  {y}
+                  {y === liveSeason ? `${y} (SEASON SO FAR)` : y}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -79,6 +84,12 @@ export function ScreenerPanel() {
           {data.offense_only && (
             <div className="bg-warning/10 border border-warning/30 p-2 text-[10px] font-mono text-warning">
               {data.method}
+            </div>
+          )}
+          {data.season_so_far && (
+            <div className="bg-warning/10 border border-warning/30 p-2 text-[10px] font-mono text-warning flex flex-col gap-1">
+              <span className="font-bold uppercase tracking-wider">{data.year ?? year} — SEASON SO FAR ({data.sample_label})</span>
+              <span>{data.method}</span>
             </div>
           )}
           

@@ -63,6 +63,9 @@ TEAM_CODES = {
     "Toronto Blue Jays": "TOR",
     "Washington Nationals": "WSN",
 }
+# The `all` player pool floor: below this a sample is too small to assess.
+POOL_FLOOR_PA = 100
+POOL_FLOOR_IP = 30.0
 HISTORICAL_TEAMS = [
     ("OAK", 2002, "FOUNDING EXAMPLE"),
     ("NYY", 1998, "114-WIN POWERHOUSE"),
@@ -428,7 +431,7 @@ async def get_final_score(game_pk: str) -> dict[str, Any] | None:
     }
 
 async def get_player_pool(group: str, pool: str = "qualified") -> list[dict[str, Any]]:
-    """League-wide 2026 player pool, identity by player.id, cached ~6h.
+    """League-wide current-season player pool, identity by player.id, cached ~6h.
 
     The `all` pool is floored app-side to ≥100 PA (hitters) / ≥30 IP
     (pitchers) so tiny samples never masquerade as assessable players.
@@ -471,7 +474,7 @@ async def get_player_pool(group: str, pool: str = "qualified") -> list[dict[str,
             raise FeedUnavailable("The MLB player pool returned no usable rows.")
         return players
 
-    value, _ = await pool_cache.get_or_set(f"pool:{group}:{pool}", loader)
+    value, _ = await pool_cache.get_or_set(f"pool:{current_season()}:{group}:{pool}", loader)
     return value
 
 async def get_news() -> list[dict[str, Any]]:
@@ -556,7 +559,7 @@ async def get_rosters() -> dict[int, list[dict[str, Any]]]:
         pairs = await asyncio.gather(*(one(team_id) for team_id in directory))
         return dict(pairs)
 
-    value, _ = await pool_cache.get_or_set("rosters", loader)
+    value, _ = await pool_cache.get_or_set(f"rosters:{current_season()}", loader)
     return value
 
 async def get_season_dates() -> dict[str, str]:
@@ -572,7 +575,7 @@ async def get_season_dates() -> dict[str, str]:
             "end": str(seasons[0]["regularSeasonEndDate"]),
         }
 
-    value, _ = await pool_cache.get_or_set("season_dates", loader)
+    value, _ = await pool_cache.get_or_set(f"season_dates:{current_season()}", loader)
     return value
 
 def _rss_date(raw: str | None) -> str:
@@ -636,7 +639,35 @@ async def get_standings() -> list[dict[str, Any]]:
             raise FeedUnavailable("Standings did not return all 30 teams.")
         return teams
 
-    value, _ = await cache.get_or_set("standings", loader)
+    value, _ = await cache.get_or_set(f"standings:{current_season()}", loader)
+    return value
+
+async def get_prior_season_wins() -> dict[str, Any]:
+    """Final regular-season wins for the prior season, keyed by team_id.
+
+    The live screener's naive preseason prior. A finished season never
+    changes, so this rides the long pool cache.
+    """
+    season = current_season() - 1
+
+    async def loader() -> dict[str, Any]:
+        payload = await _fetch_json(
+            "/api/v1/standings",
+            {
+                "leagueId": "103,104",
+                "season": season,
+                "standingsTypes": "regularSeason",
+            },
+        )
+        wins: dict[int, int] = {}
+        for record in payload.get("records", []):
+            for team_record in record.get("teamRecords", []):
+                wins[int(team_record["team"]["id"])] = int(team_record["wins"])
+        if len(wins) < 30:
+            raise FeedUnavailable(f"{season} final standings are incomplete.")
+        return {"season": season, "wins": wins}
+
+    value, _ = await pool_cache.get_or_set(f"standings:final:{season}", loader)
     return value
 
 async def get_transactions(days: int = 7) -> list[dict[str, Any]]:
@@ -706,7 +737,7 @@ async def get_remaining_schedule() -> list[dict[str, Any]]:
                 )
         return games
 
-    value, _ = await pool_cache.get_or_set("remaining_schedule", loader)
+    value, _ = await pool_cache.get_or_set(f"remaining_schedule:{current_season()}", loader)
     return value
 
 def _blended_side(
@@ -787,16 +818,16 @@ async def get_league_pool_context() -> dict[str, Any]:
             "qualified_hitters": len(qualified_hitters),
             "qualified_pitchers": len(qualified_pitchers),
             "mean_definition": (
-                "League means are unweighted averages over the 2026 qualified pool; "
+                f"League means are unweighted averages over the {current_season()} qualified pool; "
                 "team PA/IP are league averages over all 30 teams."
             ),
         }
 
-    value, _ = await pool_cache.get_or_set("pool:context", loader)
+    value, _ = await pool_cache.get_or_set(f"pool:context:{current_season()}", loader)
     return value
 
 async def get_team_live(team_id: int) -> dict[str, Any]:
-    """Live 2026 inputs + record for one team, from the same cached feeds."""
+    """Live current-season inputs + record for one team, from the same cached feeds."""
     directory = await get_team_directory()
     if team_id not in directory:
         raise FeedUnavailable("Unknown MLB team id.")
@@ -915,7 +946,7 @@ async def get_injury_flags() -> dict[int, list[dict[str, Any]]]:
                 )
         return flags
 
-    value, _ = await pool_cache.get_or_set("injury_flags", loader)
+    value, _ = await pool_cache.get_or_set(f"injury_flags:{current_season()}", loader)
     return value
 
 def _is_il_status(status: str) -> bool:

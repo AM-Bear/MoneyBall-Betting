@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import model_setup
+from backend.feeds import current_season
 from backend.analytics import (
     beane_badge,
     blend_defense_inputs,
@@ -183,6 +184,7 @@ def v2_tests(artifacts: dict) -> None:
         league_obp=league["obp"],
         league_slg=league["slg"],
         league_team_pa=league["team_pa"],
+        season=current_season(),
     )
     expected_delta_rs = 0.10 * beta_obp * 0.050
     assert_close(value["delta_rs"], expected_delta_rs, 0.05, "hitter ΔRS receipts")
@@ -206,6 +208,7 @@ def v2_tests(artifacts: dict) -> None:
         league_obp_against=0.320,
         league_slg_against=0.390,
         league_team_ip=1440.0,
+        season=current_season(),
     )
     expected_delta_ra = 0.10 * beta_oobp * -0.030
     assert_close(pitcher["delta_ra"], expected_delta_ra, 0.05, "pitcher ΔRA receipts")

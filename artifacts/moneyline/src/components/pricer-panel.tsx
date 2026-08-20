@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { Badge } from "./ui/badge";
 import { Slider } from "./ui/slider";
 import { Switch } from "./ui/switch";
 import { cn } from "@/lib/utils";
 import { formatOdds } from "./slate-rail";
+import { PulseMeter } from "./pulse-meter";
 import { Loader2 } from "lucide-react";
 
 function formatStat(val: number) {
@@ -52,7 +54,8 @@ export function PricerPanel({
   isDirty,
   customInputs,
   customPrice,
-  onReset
+  onReset,
+  liveContext
 }: { 
   team: string;
   year: number;
@@ -62,6 +65,13 @@ export function PricerPanel({
   customInputs: any;
   customPrice: any;
   onReset: () => void;
+  liveContext?: {
+    season?: number;
+    sampleLabel: string;
+    flags: any[];
+    pulse: any;
+    record: { wins: number; losses: number; games_played: number; runs_scored: number; runs_allowed: number };
+  } | null;
 }) {
   const [frontOffice, setFrontOffice] = useState(false);
 
@@ -110,6 +120,11 @@ export function PricerPanel({
           </h2>
           {data.offense_only && (
             <Badge variant="outline" className="text-[10px]">OFFENSE ONLY (PRE-1999)</Badge>
+          )}
+          {liveContext && (
+            <Badge variant="outline" className="text-[10px] text-warning border-warning/30">
+              {liveContext.sampleLabel}
+            </Badge>
           )}
         </div>
         <div className="flex items-center gap-3 text-xs font-mono">
@@ -167,20 +182,35 @@ export function PricerPanel({
           <div className="absolute -right-3 top-1/2 -translate-y-1/2 text-border hidden md:block">→</div>
         </div>
 
-        {/* Pipeline Stage 4: Playoff Odds Gauge */}
+        {/* Pipeline Stage 4: Playoff Odds Gauge (historical logistic) —
+            hidden in live mode: the honest playoff number is the
+            Season Desk simulation, not the 1962–2001 logistic. */}
         <div className="flex flex-col gap-2 items-center justify-center h-full">
           <div className="text-[10px] text-muted-foreground font-semibold tracking-widest uppercase mb-2">Playoff Odds</div>
-          
-          <div className="relative w-32 h-16 overflow-hidden mb-2">
-            <div className="absolute top-0 left-0 w-32 h-32 rounded-full border-8 border-muted" />
-            <div 
-              className={cn("absolute top-0 left-0 w-32 h-32 rounded-full border-8 border-transparent border-t-current border-l-current transition-transform duration-700 ease-out", gaugeColor)}
-              style={{ transform: `rotate(${gaugeRotation - 45}deg)` }}
-            />
-            <div className="absolute bottom-0 left-1/2 -translate-x-1/2 text-2xl font-bold font-mono tracking-tighter">
-              {hasProb ? `${(playoffProb * 100).toFixed(1)}%` : "—"}
+
+          {liveContext ? (
+            <Link
+              href="/season"
+              className="border border-border bg-background p-3 text-center font-mono text-[10px] text-muted-foreground hover:border-primary hover:text-primary transition-colors leading-snug"
+            >
+              {liveContext.season ?? "LIVE"} PLAYOFF ODDS LIVE IN
+              <br />
+              <span className="font-bold">SEASON DESK →</span>
+              <br />
+              <span className="text-[9px]">(SIMULATED, NOT THE HISTORICAL LOGISTIC)</span>
+            </Link>
+          ) : (
+            <div className="relative w-32 h-16 overflow-hidden mb-2">
+              <div className="absolute top-0 left-0 w-32 h-32 rounded-full border-8 border-muted" />
+              <div 
+                className={cn("absolute top-0 left-0 w-32 h-32 rounded-full border-8 border-transparent border-t-current border-l-current transition-transform duration-700 ease-out", gaugeColor)}
+                style={{ transform: `rotate(${gaugeRotation - 45}deg)` }}
+              />
+              <div className="absolute bottom-0 left-1/2 -translate-x-1/2 text-2xl font-bold font-mono tracking-tighter">
+                {hasProb ? `${(playoffProb * 100).toFixed(1)}%` : "—"}
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="text-xs font-mono text-muted-foreground flex gap-2 items-center">
             FAIR LINE: <span className="text-primary font-bold">{currentFairLine != null ? formatOdds(currentFairLine) : "—"}</span>
@@ -201,6 +231,37 @@ export function PricerPanel({
               </Badge>
             )}
           </span>
+        </div>
+      )}
+
+      {liveContext && (
+        <div className="flex flex-col gap-2 mt-2">
+          <div className="bg-background border border-border p-2 text-xs font-mono flex items-center gap-4 text-muted-foreground flex-wrap">
+            <span className="font-bold text-primary">SO FAR</span>
+            <span>{liveContext.record.wins}–{liveContext.record.losses}</span>
+            <span>RS {liveContext.record.runs_scored}</span>
+            <span>RA {liveContext.record.runs_allowed}</span>
+            <span className="text-[10px]">PROJECTION IS THE 162-GAME RATE, {liveContext.sampleLabel}</span>
+          </div>
+
+          {liveContext.flags.length > 0 && (
+            <div className="border border-destructive/30 bg-destructive/5 p-2 flex flex-col gap-1 font-mono text-xs">
+              <div className="text-[9px] uppercase tracking-widest text-destructive">
+                IL FLAGS — CONTEXT ONLY, NEVER MOVES A PRICE
+              </div>
+              {liveContext.flags.map((f: any, i: number) => (
+                <div key={i} className="flex flex-wrap items-center gap-2">
+                  <span className="font-bold">{f.player}</span>
+                  <span className="text-destructive">{f.status}</span>
+                  <span className="text-muted-foreground text-[10px]">
+                    #{f.playing_time_rank?.rank} by {f.playing_time_rank?.metric}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <PulseMeter pulse={liveContext.pulse} />
         </div>
       )}
     </div>

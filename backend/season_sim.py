@@ -1,4 +1,4 @@
-"""Seeded rest-of-season Monte Carlo under the actual 2026 playoff format.
+"""Seeded rest-of-season Monte Carlo under the actual current-season playoff format.
 
 Fixed seed, N = 2,000. Cached; re-run only when the inputs (team rates,
 standings, remaining schedule) actually refresh. Playoff odds come from the
@@ -29,22 +29,30 @@ from backend.odds import log5_probability, pythagorean_strength
 
 SIM_SEED = 20261962
 SIM_ITERATIONS = 2000
-ASSUMPTIONS = [
-    "Current team rates (2026 OBP/SLG and OBP/SLG-against) persist for every remaining game.",
-    "No trade, injury, fatigue, or pitching-matchup modeling.",
-    "Per-game win probability: RS/RA models → Pythagorean → log5, the desk's season chain.",
-    "Playoff spots: top 6 per league from simulated standings — 3 division winners + 3 wild cards (the actual 2026 format).",
-    "Ties for a spot are broken randomly inside each simulation.",
-    f"N = {SIM_ITERATIONS} simulations, fixed seed {SIM_SEED}; the table only changes when the inputs refresh.",
-]
-NEXT_SEASON_REFUSAL = {
-    "season": current_season() + 1,
-    "status": "NOT PRICED",
-    "reason": (
-        "A season model needs an offseason roster model; this desk doesn't "
-        "fake what it can't fit."
-    ),
-}
+
+
+def assumptions(season: int) -> list[str]:
+    """Assumption copy is built per request so the season is never stale."""
+    return [
+        f"Current team rates ({season} OBP/SLG and OBP/SLG-against) persist for every remaining game.",
+        "No trade, injury, fatigue, or pitching-matchup modeling.",
+        "Per-game win probability: RS/RA models → Pythagorean → log5, the desk's season chain.",
+        f"Playoff spots: top 6 per league from simulated standings — 3 division winners + 3 wild cards (the actual {season} format).",
+        "Ties for a spot are broken randomly inside each simulation.",
+        f"N = {SIM_ITERATIONS} simulations, fixed seed {SIM_SEED}; the table only changes when the inputs refresh.",
+    ]
+
+
+def next_season_refusal(season: int) -> dict[str, Any]:
+    """Built per request — 'next season' must track the live season."""
+    return {
+        "season": season + 1,
+        "status": "NOT PRICED",
+        "reason": (
+            "A season model needs an offseason roster model; this desk doesn't "
+            "fake what it can't fit."
+        ),
+    }
 
 _sim_lock = asyncio.Lock()
 _sim_cache: dict[str, Any] | None = None
@@ -149,6 +157,80 @@ def simulate_season(
     return results
 
 
+async def get_team_outlook(team_id: int) -> dict[str, Any]:
+    """Remaining-schedule difficulty for one team: mean opponent rating and
+    the next 10 games with chain win probabilities. Same cached inputs as
+    the simulation — no per-request refits."""
+    standings = await get_standings()
+    directory = {t["team_id"]: t for t in standings}
+    if team_id not in directory:
+        raise LookupError(f"Unknown MLB team id {team_id}.")
+    schedule = await get_remaining_schedule()
+    team_games = sorted(
+        (g for g in schedule if team_id in (g["home_id"], g["away_id"])),
+        key=lambda g: g["date"],
+    )
+    involved = {team_id}
+    for game in team_games:
+        involved.add(game["home_id"])
+        involved.add(game["away_id"])
+
+    season = current_season()
+    semaphore = asyncio.Semaphore(5)
+    strengths: dict[int, float] = {}
+
+    async def one(tid: int) -> None:
+        async with semaphore:
+            inputs, _cached = await _team_inputs(tid, season)
+            model = predict_from_inputs(**inputs)
+            strengths[tid] = pythagorean_strength(
+                model["predicted"]["rs"], model["predicted"]["ra"]
+            )
+
+    await asyncio.gather(*(one(tid) for tid in involved))
+
+    opponent_ratings: list[float] = []
+    next_10: list[dict[str, Any]] = []
+    for game in team_games:
+        is_home = game["home_id"] == team_id
+        opponent_id = game["away_id"] if is_home else game["home_id"]
+        if opponent_id not in strengths:
+            continue
+        opponent_ratings.append(strengths[opponent_id])
+        if len(next_10) < 10:
+            home_prob = log5_probability(
+                strengths[game["home_id"]], strengths[game["away_id"]]
+            )
+            next_10.append(
+                {
+                    "date": game["date"],
+                    "opponent": directory[opponent_id]["code"],
+                    "opponent_name": directory[opponent_id]["name"],
+                    "home": is_home,
+                    "win_prob": round(home_prob if is_home else 1 - home_prob, 4),
+                }
+            )
+
+    team = directory[team_id]
+    return {
+        "team_id": team_id,
+        "team": team["code"],
+        "name": team["name"],
+        "games_remaining": len(team_games),
+        "mean_opponent_rating": (
+            round(sum(opponent_ratings) / len(opponent_ratings), 4)
+            if opponent_ratings
+            else None
+        ),
+        "rating_definition": (
+            "Opponent rating is Pythagorean strength from the season chain "
+            "(0.500 = league average), game-weighted over the remaining schedule."
+        ),
+        "next_10": next_10,
+        "sample_label": f"THRU {team['games_played']} GP",
+    }
+
+
 async def get_season_sim() -> dict[str, Any]:
     """Cached simulation payload; recomputed only when inputs change."""
     global _sim_cache
@@ -173,7 +255,9 @@ async def get_season_sim() -> dict[str, Any]:
             model["predicted"]["rs"], model["predicted"]["ra"]
         )
 
-    signature = _input_signature(
+    # Season-scope the cache: a cached prior-year payload must never
+    # survive a season boundary.
+    signature = f"{season}:" + _input_signature(
         standings, {k: v for k, v in strengths.items()}, schedule
     )
     async with _sim_lock:
@@ -230,13 +314,13 @@ async def get_season_sim() -> dict[str, Any]:
             "sample_label": f"THRU {max(t['games_played'] for t in standings)} GP",
             "remaining_games_simulated": len(schedule),
             "rows": rows,
-            "assumptions": ASSUMPTIONS,
+            "assumptions": assumptions(season),
             "playoff_format_note": (
                 "Playoff odds are computed from simulated standings under the "
-                "2026 format. The historical Playoffs~W logistic (fit on "
+                f"{season} format. The historical Playoffs~W logistic (fit on "
                 "1962–2012 formats) stays in the historical panels only."
             ),
-            "next_season": NEXT_SEASON_REFUSAL,
+            "next_season": next_season_refusal(season),
         }
         _sim_cache = {"signature": signature, "payload": payload}
         return payload

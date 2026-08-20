@@ -14,10 +14,12 @@ from backend.inference import load_models
 
 INNINGS_SHARE_FLOOR = 0.4
 INNINGS_SHARE_CAP = 0.8
-MWAA_LABEL = (
-    "Offense (or run prevention) only — no defense, no baserunning, no park "
-    "adjustment; \"average\" means the 2026 qualified pool. This is not WAR."
-)
+def mwaa_label(season: int) -> str:
+    """Built per call — the pool's season is the backend clock, never a literal."""
+    return (
+        "Offense (or run prevention) only — no defense, no baserunning, no park "
+        f'adjustment; "average" means the {season} qualified pool. This is not WAR.'
+    )
 
 # The auditable media-pulse lexicon: small, visible, and returned with every
 # score so a reader can re-derive it in ten seconds.
@@ -65,6 +67,7 @@ def hitter_run_value(
     league_obp: float,
     league_slg: float,
     league_team_pa: float,
+    season: int,
 ) -> dict[str, Any]:
     """ΔRS and mWAA for a hitter vs the qualified-pool league mean."""
     coefficients = _coefficients()
@@ -109,7 +112,7 @@ def hitter_run_value(
             f"= {delta_rs:.1f} × {coefficients['wins_per_run']:.4f} = {mwaa:.2f}"
         ),
         "runs_per_win_receipt": runs_per_win_receipt(),
-        "label": MWAA_LABEL,
+        "label": mwaa_label(season),
     }
 
 
@@ -120,6 +123,7 @@ def pitcher_run_value(
     league_obp_against: float,
     league_slg_against: float,
     league_team_ip: float,
+    season: int,
 ) -> dict[str, Any]:
     """ΔRA and mWAA for a pitcher — sign flipped so run prevention is positive."""
     coefficients = _coefficients()
@@ -166,7 +170,7 @@ def pitcher_run_value(
             "(ΔRA sign flipped: run prevention is positive value)"
         ),
         "runs_per_win_receipt": runs_per_win_receipt(),
-        "label": MWAA_LABEL,
+        "label": mwaa_label(season),
     }
 
 

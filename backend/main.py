@@ -22,10 +22,14 @@ from pydantic import BaseModel, Field, model_validator
 from backend.feeds import (
     FeedUnavailable,
     GameNotFound,
+    _team_inputs,
     close_client,
+    current_season,
     get_final_score,
     get_injury_flags,
+    get_prior_season_wins,
     get_slate,
+    get_team_directory,
     get_team_live,
 )
 from backend.inference import (
@@ -62,7 +66,7 @@ from backend.record_store import (
     void_parlay,
     void_pick,
 )
-from backend.season_sim import get_season_sim
+from backend.season_sim import get_season_sim, get_team_outlook
 from backend.wire import get_team_pulse, get_wire
 
 
@@ -605,8 +609,89 @@ def _prior_team(team: str, year: int) -> tuple[str, int]:
     }.get((team, year), (team, year - 1))
 
 
+async def _screener_live(season: int) -> dict[str, Any]:
+    """Live season (SO FAR): live inputs through the full chain, priced
+    against last season's final wins as the naive preseason prior."""
+    directory = await get_team_directory()
+    prior = await get_prior_season_wins()
+    semaphore = asyncio.Semaphore(5)
+    inputs_by_team: dict[int, dict[str, float]] = {}
+
+    async def one(team_id: int) -> None:
+        async with semaphore:
+            inputs, _cached = await _team_inputs(team_id, season)
+            inputs_by_team[team_id] = inputs
+
+    await asyncio.gather(*(one(team_id) for team_id in directory))
+
+    rows: list[dict[str, Any]] = []
+    for team_id, team in directory.items():
+        inputs = inputs_by_team[team_id]
+        predicted = predict_from_inputs(**inputs)["predicted"]
+        prior_wins = prior["wins"].get(team_id)
+        predicted_wins = float(predicted["wins"])
+        mispricing = (
+            predicted_wins - prior_wins if prior_wins is not None else None
+        )
+        badge = None
+        if mispricing is not None and abs(mispricing) >= 5:
+            badge = "MISPRICED ▲" if mispricing > 0 else "MISPRICED ▼"
+        rows.append(
+            {
+                "year": season,
+                "team": team["code"],
+                "obp": round(inputs["obp"], 3),
+                "slg": round(inputs["slg"], 3),
+                "oobp": round(inputs["oobp"], 3),
+                "oslg": round(inputs["oslg"], 3),
+                "predicted_wins": round(predicted_wins, 1),
+                "actual_wins": team["wins"],
+                "prior_wins": prior_wins,
+                "mispricing": round(mispricing, 1) if mispricing is not None else None,
+                "offense_only": False,
+                "badge": badge,
+                "games_played": team["games_played"],
+            }
+        )
+    rows.sort(
+        key=lambda row: row["mispricing"] if row["mispricing"] is not None else -999,
+        reverse=True,
+    )
+    max_gp = max(team["games_played"] for team in directory.values())
+    return {
+        "year": season,
+        "offense_only": False,
+        "rows": rows,
+        "payroll_available": False,
+        "season_so_far": True,
+        "sample_label": f"THRU {max_gp} GP",
+        "method": (
+            f"SEASON SO FAR — live {season} rates through the full chain "
+            f"(a 162-game projection), priced against {prior['season']} final "
+            "wins as the naive preseason prior. Partial season; actual wins "
+            "are season-to-date."
+        ),
+    }
+
+
 @app.get("/api/screener")
-async def screener(year: int = Query(2002, ge=1962, le=2012)) -> dict[str, Any]:
+async def screener(year: int = Query(2002, ge=1962)) -> dict[str, Any]:
+    if year == current_season():
+        try:
+            return await _screener_live(year)
+        except Exception:
+            logger.exception("screener_live_failed")
+            raise MoneylineError(
+                "pool_unavailable",
+                f"Live {year} team inputs are temporarily unavailable.",
+                503,
+            ) from None
+    if year > 2012:
+        raise MoneylineError(
+            "bad_year",
+            f"NOT IN DATASET — 1962–2012 SEASONS, OR {current_season()} (SEASON SO FAR)",
+            400,
+        )
     data = load_data()
     season = data[data["Year"] == year].copy()
     if season.empty:
@@ -735,7 +820,7 @@ async def players(
     except Exception:
         raise MoneylineError(
             "pool_unavailable",
-            "The 2026 player pool is temporarily unavailable.",
+            f"The {current_season()} player pool is temporarily unavailable.",
             503,
         ) from None
     return {
@@ -789,13 +874,13 @@ async def compare_players_route(
     except Exception:
         raise MoneylineError(
             "pool_unavailable",
-            "The 2026 player pool is temporarily unavailable.",
+            f"The {current_season()} player pool is temporarily unavailable.",
             503,
         ) from None
     if comparison is None:
         raise MoneylineError(
             "player_not_found",
-            "NOT IN THE 2026 POOL — the desk assesses players with ≥100 PA or ≥30 IP.",
+            f"NOT IN THE {current_season()} POOL — the desk assesses players with ≥100 PA or ≥30 IP.",
             404,
         )
     return comparison
@@ -883,13 +968,13 @@ async def player_card(player_id: int) -> dict[str, Any]:
     except Exception:
         raise MoneylineError(
             "pool_unavailable",
-            "The 2026 player pool is temporarily unavailable.",
+            f"The {current_season()} player pool is temporarily unavailable.",
             503,
         ) from None
     if card is None:
         raise MoneylineError(
             "player_not_found",
-            "NOT IN THE 2026 POOL — the desk assesses players with ≥100 PA or ≥30 IP.",
+            f"NOT IN THE {current_season()} POOL — the desk assesses players with ≥100 PA or ≥30 IP.",
             404,
         )
     return card
@@ -949,6 +1034,53 @@ async def season_sim() -> dict[str, Any]:
             "Season simulation inputs are temporarily unavailable.",
             503,
         ) from None
+
+
+@app.get("/api/season-sim/team/{team_id}")
+async def season_sim_team(team_id: int) -> dict[str, Any]:
+    try:
+        return await get_team_outlook(team_id)
+    except LookupError:
+        raise MoneylineError(
+            "team_not_found", "Unknown MLB team id.", 404
+        ) from None
+    except Exception:
+        logger.exception("team_outlook_failed team_id=%s", team_id)
+        raise MoneylineError(
+            "sim_unavailable",
+            "Remaining-schedule inputs are temporarily unavailable.",
+            503,
+        ) from None
+
+
+@app.get("/api/teams-live")
+async def teams_live() -> dict[str, Any]:
+    """Directory of all 30 current-season teams for omnisearch and the
+    live Team Pricer — codes map through TEAM_CODES, ids are MLB ids."""
+    try:
+        directory = await get_team_directory()
+    except Exception:
+        raise MoneylineError(
+            "feed_unavailable",
+            f"The {current_season()} team directory is temporarily unavailable.",
+            503,
+        ) from None
+    season = current_season()
+    return {
+        "season": season,
+        "teams": [
+            {
+                "team_id": team["team_id"],
+                "team": team["code"],
+                "name": team["name"],
+                "label": f"{team['code']} {season}",
+                "wins": team["wins"],
+                "losses": team["losses"],
+                "games_played": team["games_played"],
+            }
+            for team in sorted(directory.values(), key=lambda t: t["code"])
+        ],
+    }
 
 
 if (DIST_DIR / "assets").exists():
