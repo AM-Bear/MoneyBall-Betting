@@ -132,17 +132,42 @@ async def grade_pending_records() -> dict[str, int]:
     return {"checked": len(rows), "graded": graded}
 
 
+GRADE_INTERVAL_SECONDS = max(int(os.getenv("GRADE_INTERVAL_SECONDS", "1800")), 60)
+
+
+async def grade_scheduler() -> None:
+    """Grade pending picks on a fixed cadence; failures are logged and retried next cycle."""
+    while True:
+        try:
+            result = await grade_pending_records()
+            logger.info(
+                "record_autograde checked=%s graded=%s next_run_s=%s",
+                result["checked"],
+                result["graded"],
+                GRADE_INTERVAL_SECONDS,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.warning("record_autograde_failed retry_in_s=%s", GRADE_INTERVAL_SECONDS, exc_info=True)
+        await asyncio.sleep(GRADE_INTERVAL_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     started = time.perf_counter()
     load_models()
     app.state.model_loaded = True
     app.state.startup_ms = round((time.perf_counter() - started) * 1000)
-    app.state.grade_task = asyncio.create_task(grade_pending_records())
+    app.state.grade_task = asyncio.create_task(grade_scheduler())
     yield
     grade_task = getattr(app.state, "grade_task", None)
     if grade_task and not grade_task.done():
         grade_task.cancel()
+        try:
+            await grade_task
+        except asyncio.CancelledError:
+            pass
     await close_client()
 
 
@@ -380,7 +405,7 @@ async def slate(
             persisted = await asyncio.to_thread(store_slate_snapshot, data)
         except Exception:
             logger.warning("record_snapshot_store_failed date=%s", data.get("date"))
-        request.app.state.grade_task = asyncio.create_task(grade_pending_records())
+        request.app.state.slate_grade_task = asyncio.create_task(grade_pending_records())
     data["record_persisted"] = persisted
     return data
 

@@ -103,7 +103,7 @@ def pending_picks() -> list[dict[str, Any]]:
                 """
                 SELECT game_pk, game_date, away_team, home_team, pick_team
                 FROM moneyline_record_picks
-                WHERE result IS NULL AND game_date < CURRENT_DATE
+                WHERE result IS NULL AND game_date <= CURRENT_DATE
                 ORDER BY game_date, id
                 """
             )
