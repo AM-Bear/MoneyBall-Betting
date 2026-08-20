@@ -3,8 +3,8 @@ name: Background scheduler constraints
 description: The pick-snapshot/grading loop assumes an always-on server process
 ---
 
-The daily pick snapshot and auto-grading both run in an in-process asyncio loop started at FastAPI startup (single interval env-tunable via GRADE_INTERVAL_SECONDS).
+The daily pick snapshot and auto-grading run in an in-process loop inside the API server; all writes are idempotent, so repeated cycles are safe.
 
-**Why:** Simplest reliable option in dev; snapshot/grade writes are idempotent (ON CONFLICT guards), so running every cycle is safe and re-runs never duplicate picks.
+**Why:** Simplest reliable option in development, but the loop only runs while a server process is alive.
 
-**How to apply:** Any deployment must keep one server process running continuously (Reserved VM, not scale-to-zero autoscale), or the ledger silently misses days again — the exact failure this design removed. If autoscale is chosen, move snapshot/grade to a scheduled job instead.
+**How to apply:** A published deployment must either keep one process always on or move snapshot/grade to a scheduled job — a scale-to-zero deployment silently misses ledger days, the exact failure this design removed.

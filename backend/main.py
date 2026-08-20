@@ -19,7 +19,15 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
 
-from backend.feeds import GameNotFound, close_client, get_final_score, get_slate
+from backend.feeds import (
+    FeedUnavailable,
+    GameNotFound,
+    close_client,
+    get_final_score,
+    get_injury_flags,
+    get_slate,
+    get_team_live,
+)
 from backend.inference import (
     load_data,
     load_models,
@@ -28,22 +36,34 @@ from backend.inference import (
     static_json,
 )
 from backend.odds import (
+    decimal_odds,
     edge_probability,
     half_kelly_fraction,
     log5_probability,
     market_vig,
     moneyline_to_probability,
+    parlay_ev,
+    parlay_probability,
+    parlay_vig_comparison,
     probability_to_moneyline,
     pythagorean_strength,
 )
+from backend.players import build_player_card, compare_players, search_players
 from backend.record_store import (
     database_available,
+    ensure_schema,
     get_record,
+    grade_parlay,
     grade_pick,
+    pending_parlays,
     pending_picks,
+    store_parlay_slip,
     store_slate_snapshot,
+    void_parlay,
     void_pick,
 )
+from backend.season_sim import get_season_sim
+from backend.wire import get_team_pulse, get_wire
 
 
 logging.basicConfig(
@@ -56,8 +76,6 @@ EQUITY_CAVEAT = (
     "Game-level lines also price pitchers, injuries, and lineups this "
     "season-aggregate model cannot see."
 )
-
-
 class MoneylineError(Exception):
     def __init__(self, code: str, message: str, status_code: int) -> None:
         self.code = code
@@ -80,6 +98,28 @@ class PriceInput(BaseModel):
     slg: float = Field(gt=0, lt=1)
     oobp: float | None = Field(default=None, gt=0, lt=1)
     oslg: float | None = Field(default=None, gt=0, lt=1)
+
+class ParlayLeg(BaseModel):
+    gamePk: str
+    side: Literal["home", "away"]
+
+
+class ParlayInput(BaseModel):
+    legs: list[ParlayLeg] = Field(min_length=2, max_length=6)
+    book_odds: int | None = None
+
+    @model_validator(mode="after")
+    def validate_book_odds(self) -> "ParlayInput":
+        if self.book_odds is not None and abs(self.book_odds) < 100:
+            raise ValueError("American moneylines must be ≤ −100 or ≥ +100.")
+        return self
+
+
+INDEPENDENCE_NOTE = (
+    "Combined probability multiplies the legs under an independence "
+    "assumption. Legs from the same game are refused: they are correlated "
+    "and the math would be dishonest."
+)
 
 
 class MatchupInput(BaseModel):
@@ -108,7 +148,13 @@ VOID_AFTER_DAYS = max(int(os.getenv("VOID_AFTER_DAYS", "3")), 1)
 
 async def grade_pending_records() -> dict[str, int]:
     if not await asyncio.to_thread(database_available):
-        return {"checked": 0, "graded": 0, "voided": 0}
+        return {
+            "checked": 0,
+            "graded": 0,
+            "voided": 0,
+            "parlays_graded": 0,
+            "parlays_voided": 0,
+        }
     rows = await asyncio.to_thread(pending_picks)
     semaphore = asyncio.Semaphore(3)
 
@@ -160,11 +206,78 @@ async def grade_pending_records() -> dict[str, int]:
     outcomes: list[str] = []
     if rows:
         outcomes = list(await asyncio.gather(*(grade_one(row) for row in rows)))
+
+    parlay_result = await _grade_pending_parlays()
+
     return {
         "checked": len(rows),
         "graded": outcomes.count("graded"),
         "voided": outcomes.count("voided"),
+        "parlays_graded": parlay_result["graded"],
+        "parlays_voided": parlay_result["voided"],
     }
+
+
+async def _grade_pending_parlays() -> dict[str, int]:
+    """Settle pending parlay slips against finals.
+
+    All-or-nothing grading once every leg has a final. A slip is voided —
+    terminally, at 0 units — when any leg's game is cancelled or its game_pk
+    has vanished from the feed past the same grace period picks get: an
+    all-or-nothing slip can never settle honestly once a leg can never
+    produce a final. One malformed or unresolvable slip never blocks the
+    others.
+    """
+    graded = 0
+    voided = 0
+    try:
+        slips = await asyncio.to_thread(pending_parlays)
+    except Exception:
+        logger.warning("parlay_pending_fetch_failed", exc_info=True)
+        return {"graded": 0, "voided": 0}
+    for slip in slips:
+        try:
+            leg_winners: dict[str, str] = {}
+            void_slip = False
+            for leg in slip["legs"]:
+                game_pk = str(leg["game_pk"])
+                try:
+                    final = await get_final_score(game_pk)
+                except GameNotFound:
+                    cutoff = date.today() - timedelta(days=VOID_AFTER_DAYS)
+                    if slip["slip_date"] <= cutoff:
+                        void_slip = True
+                    continue
+                except Exception:
+                    logger.warning("parlay_leg_feed_failed game_pk=%s", game_pk)
+                    continue
+                if final is None:
+                    continue
+                if final.get("status") == "cancelled":
+                    void_slip = True
+                    continue
+                away_score = final.get("final_away")
+                home_score = final.get("final_home")
+                if away_score is None or home_score is None:
+                    continue
+                if int(away_score) == int(home_score):
+                    continue  # tie — leg unresolved, slip stays pending
+                leg_winners[game_pk] = (
+                    str(final["away"])
+                    if int(away_score) > int(home_score)
+                    else str(final["home"])
+                )
+            if void_slip:
+                if await asyncio.to_thread(void_parlay, int(slip["id"])):
+                    logger.info("parlay_voided slip_id=%s", slip["id"])
+                    voided += 1
+            elif len(leg_winners) == len(slip["legs"]):
+                graded += int(
+                    await asyncio.to_thread(grade_parlay, int(slip["id"]), leg_winners)
+                )
+        except Exception:
+            logger.warning("parlay_grade_failed slip_id=%s", slip.get("id"))
+    return {"graded": graded, "voided": voided}
 
 
 GRADE_INTERVAL_SECONDS = max(int(os.getenv("GRADE_INTERVAL_SECONDS", "1800")), 60)
@@ -226,6 +339,11 @@ async def lifespan(app: FastAPI):
     started = time.perf_counter()
     load_models()
     app.state.model_loaded = True
+    try:
+        app.state.schema_ready = await asyncio.to_thread(ensure_schema)
+    except Exception:
+        logger.warning("schema_migration_skipped — database unavailable at boot")
+        app.state.schema_ready = False
     app.state.startup_ms = round((time.perf_counter() - started) * 1000)
     app.state.grade_task = asyncio.create_task(grade_scheduler())
     yield
@@ -605,6 +723,232 @@ async def grade_record() -> dict[str, Any]:
     record["database_ready"] = True
     result["record"] = record
     return result
+
+@app.get("/api/players")
+async def players(
+    group: Literal["hitting", "pitching"] = Query("hitting"),
+    pool: Literal["qualified", "all"] = Query("qualified"),
+    q: str | None = Query(default=None, max_length=60),
+) -> dict[str, Any]:
+    try:
+        results = await search_players(group, pool, q)
+    except Exception:
+        raise MoneylineError(
+            "pool_unavailable",
+            "The 2026 player pool is temporarily unavailable.",
+            503,
+        ) from None
+    return {
+        "group": group,
+        "pool": pool,
+        "query": q,
+        "players": results,
+        "floor_note": "The all pool is floored at ≥100 PA or ≥30 IP.",
+    }
+def _price_parlay_payload(
+    legs: list[dict[str, Any]], book_odds: int | None
+) -> dict[str, Any]:
+    probabilities = [leg["probability"] for leg in legs]
+    combined = parlay_probability(probabilities)
+    fair_line = probability_to_moneyline(combined)
+    result: dict[str, Any] = {
+        "legs": legs,
+        "combined_prob": round(combined, 4),
+        "fair_odds": fair_line,
+        "independence_note": INDEPENDENCE_NOTE,
+        "price_basis": "SEASON model probabilities (not ADJ).",
+        "vig_comparison": parlay_vig_comparison(probabilities, book_odds),
+    }
+    if book_odds is not None:
+        implied = moneyline_to_probability(book_odds)
+        payout = decimal_odds(book_odds)
+        ev = parlay_ev(combined, payout)
+        kelly = half_kelly_fraction(combined, book_odds) if ev > 0 else 0.0
+        result["book"] = {
+            "book_odds": book_odds,
+            "implied_prob": round(implied, 4),
+            "edge_pp": round((combined - implied) * 100, 1),
+            "ev_per_unit": round(ev, 4),
+            "half_kelly": round(kelly, 4),
+            "stake_label": f"{kelly:.4f}" if ev > 0 else "0.00 — NO EDGE",
+        }
+    else:
+        result["book"] = None
+    return result
+
+@app.get("/api/compare/players")
+async def compare_players_route(
+    a: int = Query(...), b: int = Query(...)
+) -> dict[str, Any]:
+    if a == b:
+        raise MoneylineError(
+            "invalid_comparison", "Pick two different players to compare.", 400
+        )
+    try:
+        comparison = await compare_players(a, b)
+    except Exception:
+        raise MoneylineError(
+            "pool_unavailable",
+            "The 2026 player pool is temporarily unavailable.",
+            503,
+        ) from None
+    if comparison is None:
+        raise MoneylineError(
+            "player_not_found",
+            "NOT IN THE 2026 POOL — the desk assesses players with ≥100 PA or ≥30 IP.",
+            404,
+        )
+    return comparison
+
+@app.get("/api/wire")
+async def wire(
+    team: str | None = Query(default=None, max_length=3),
+    types: str | None = Query(default=None, max_length=60),
+    limit: int = Query(default=100, ge=1, le=250),
+) -> dict[str, Any]:
+    try:
+        record = await asyncio.to_thread(get_record)
+    except Exception:
+        record = None
+    type_list = [t.strip() for t in types.split(",")] if types else None
+    return await get_wire(record, team=team, types=type_list, limit=limit)
+
+@app.post("/api/parlay/log")
+async def parlay_log(payload: ParlayInput) -> dict[str, Any]:
+    if not await asyncio.to_thread(database_available):
+        raise MoneylineError(
+            "record_unavailable",
+            "The persistent record store is not available.",
+            503,
+        )
+    legs = await _resolve_parlay_legs(payload)
+    priced = _price_parlay_payload(legs, payload.book_odds)
+    slip_date = legs[0]["game_date"]
+    stored = await asyncio.to_thread(
+        store_parlay_slip,
+        slip_date,
+        legs,
+        priced["combined_prob"],
+        priced["fair_odds"],
+        payload.book_odds,
+    )
+    return {
+        **stored,
+        "slip_date": slip_date,
+        "priced": priced,
+        "note": (
+            "Paper slip only — graded all-or-nothing when finals arrive. "
+            "One slip per day; reopening never duplicates it."
+        ),
+    }
+
+@app.get("/api/team-live/{team_id}")
+async def team_live(team_id: int) -> dict[str, Any]:
+    try:
+        team = await get_team_live(team_id)
+    except FeedUnavailable as error:
+        raise MoneylineError("team_not_found", str(error), 404) from None
+    try:
+        record = await asyncio.to_thread(get_record)
+    except Exception:
+        record = None
+    flags: list[dict[str, Any]] = []
+    pulse: dict[str, Any] | None = None
+    try:
+        flags = (await get_injury_flags()).get(team_id, [])
+    except Exception:
+        logger.warning("injury_flags_unavailable team_id=%s", team_id)
+    try:
+        pulse = await get_team_pulse(team_id, record)
+    except Exception:
+        logger.warning("pulse_unavailable team_id=%s", team_id)
+    return {
+        **team,
+        "flags": flags,
+        "pulse": pulse,
+        "hard_rule": "Flags and pulse are disclosed context; they never move a price.",
+    }
+
+@app.post("/api/parlay/price")
+async def parlay_price(payload: ParlayInput) -> dict[str, Any]:
+    legs = await _resolve_parlay_legs(payload)
+    return _price_parlay_payload(legs, payload.book_odds)
+
+@app.get("/api/player/{player_id}")
+async def player_card(player_id: int) -> dict[str, Any]:
+    try:
+        card = await build_player_card(player_id)
+    except MoneylineError:
+        raise
+    except Exception:
+        raise MoneylineError(
+            "pool_unavailable",
+            "The 2026 player pool is temporarily unavailable.",
+            503,
+        ) from None
+    if card is None:
+        raise MoneylineError(
+            "player_not_found",
+            "NOT IN THE 2026 POOL — the desk assesses players with ≥100 PA or ≥30 IP.",
+            404,
+        )
+    return card
+
+async def _resolve_parlay_legs(payload: ParlayInput) -> list[dict[str, Any]]:
+    game_pks = [leg.gamePk for leg in payload.legs]
+    if len(set(game_pks)) != len(game_pks):
+        raise MoneylineError(
+            "correlated_legs",
+            "SAME-GAME LEGS REFUSED — correlated outcomes; the independence "
+            "math would be dishonest.",
+            400,
+        )
+    slate = await get_slate()
+    if slate.get("mode") != "live":
+        raise MoneylineError(
+            "slate_unavailable",
+            "Parlays price only against today's live slate.",
+            503,
+        )
+    rows = {game["game_pk"]: game for game in slate.get("games", [])}
+    legs: list[dict[str, Any]] = []
+    for leg in payload.legs:
+        row = rows.get(leg.gamePk)
+        if row is None or row.get("pricing_error"):
+            raise MoneylineError(
+                "leg_not_found",
+                f"Game {leg.gamePk} is not on today's priced slate.",
+                404,
+            )
+        probability = (
+            float(row["model_prob_home"])
+            if leg.side == "home"
+            else 1 - float(row["model_prob_home"])
+        )
+        legs.append(
+            {
+                "game_pk": leg.gamePk,
+                "side": leg.side,
+                "team": row["home"] if leg.side == "home" else row["away"],
+                "opponent": row["away"] if leg.side == "home" else row["home"],
+                "probability": round(probability, 4),
+                "fair_line": probability_to_moneyline(probability),
+                "game_date": row["game_date"],
+            }
+        )
+    return legs
+
+@app.get("/api/season-sim")
+async def season_sim() -> dict[str, Any]:
+    try:
+        return await get_season_sim()
+    except Exception:
+        logger.exception("season_sim_failed")
+        raise MoneylineError(
+            "sim_unavailable",
+            "Season simulation inputs are temporarily unavailable.",
+            503,
+        ) from None
 
 
 if (DIST_DIR / "assets").exists():

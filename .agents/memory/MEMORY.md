@@ -1,1 +1,2 @@
 - [Background scheduler constraints](background-scheduler-constraints.md) — pick snapshot/grading runs in-process; production must be always-on (or use a scheduled job) or the ledger misses days.
+- [MONEYLINE backend conventions](moneyline-conventions.md) — B-Ref team codes via TEAM_CODES only; doctrine: context never moves a price; MLB API quirks; smoke_test.py is the gate.

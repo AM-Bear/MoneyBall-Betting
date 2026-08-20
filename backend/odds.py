@@ -56,6 +56,78 @@ def half_kelly_fraction(model_probability: float, line: int | float) -> float:
     return max(0.0, full_kelly / 2)
 
 
+def decimal_to_american(decimal: float) -> int:
+    """Convert decimal odds (including stake) back to an American line."""
+    if decimal <= 1:
+        raise ValueError("Decimal odds must exceed 1.")
+    if decimal >= 2:
+        return int(round((decimal - 1) * 100))
+    return -int(round(100 / (decimal - 1)))
+
+
+def parlay_probability(probabilities: list[float]) -> float:
+    """Combined probability of independent legs — Π p_i.
+
+    The independence assumption is stated by every caller; correlated
+    (same-game) legs must be rejected before this function is reached.
+    """
+    if not 2 <= len(probabilities) <= 6:
+        raise ValueError("Parlays are limited to 2–6 legs.")
+    combined = 1.0
+    for probability in probabilities:
+        if not 0 < probability < 1:
+            raise ValueError("Every leg probability must be strictly between 0 and 1.")
+        combined *= probability
+    return combined
+
+
+def parlay_book_decimal(lines: list[int | float]) -> float:
+    """Book parlay payout: convert each American leg to decimal and multiply."""
+    payout = 1.0
+    for line in lines:
+        payout *= decimal_odds(line)
+    return payout
+
+
+def parlay_ev(probability: float, decimal_payout: float) -> float:
+    """EV per 1 unit staked: P·(decimal − 1) − (1 − P)."""
+    if not 0 < probability < 1:
+        raise ValueError("Probability must be strictly between 0 and 1.")
+    return probability * (decimal_payout - 1) - (1 - probability)
+
+
+def parlay_vig_comparison(
+    leg_probabilities: list[float],
+    parlay_book_line: int | float | None = None,
+    leg_book_line: int | float = -110,
+) -> dict[str, float | int]:
+    """The vig-compounding demo: house take on a parlay vs the same legs single.
+
+    Uses standard −110 legs as the reference book price for singles (stated),
+    and the actual entered parlay payout when one exists — otherwise the
+    standard book parlay built by compounding −110 legs.
+    """
+    n = len(leg_probabilities)
+    combined = parlay_probability(leg_probabilities)
+    standard_decimal = parlay_book_decimal([leg_book_line] * n)
+    book_decimal = (
+        decimal_odds(parlay_book_line) if parlay_book_line is not None else standard_decimal
+    )
+    # Expected loss per unit staked at the model's probabilities.
+    parlay_take = -(combined * book_decimal - 1)
+    singles_take = sum(
+        -(p * decimal_odds(leg_book_line) - 1) for p in leg_probabilities
+    ) / n
+    return {
+        "legs": n,
+        "leg_reference_line": int(leg_book_line),
+        "standard_book_parlay_line": decimal_to_american(standard_decimal),
+        "fair_parlay_line": probability_to_moneyline(combined),
+        "parlay_house_take_pct": round(parlay_take * 100, 2),
+        "singles_house_take_pct": round(singles_take * 100, 2),
+    }
+
+
 def pythagorean_strength(runs_scored: float, runs_allowed: float) -> float:
     """Estimate team strength using baseball's Pythagorean expectation."""
     rs_squared = max(runs_scored, 1) ** 2

@@ -166,3 +166,46 @@ def test_doubleheader_games_share_a_date_but_grade_independently(seed_pick, fetc
     record = get_record()
     assert record["graded"] == 2
     assert record["wins"] == 2
+
+
+def test_pending_parlays_includes_same_day_slips(record_schema):
+    """A completed same-day parlay must grade when its finals arrive, not tomorrow."""
+    from backend.record_store import pending_parlays, store_parlay_slip
+
+    stored = store_parlay_slip(
+        TODAY.isoformat(),
+        [{"game_pk": "gm-1", "side": "home", "team": "BOS"}],
+        0.55,
+        250,
+        None,
+    )
+    assert stored["stored"] is True
+    assert [slip["id"] for slip in pending_parlays()] == [stored["slip_id"]]
+
+
+def test_void_parlay_is_terminal_at_zero_units(record_schema):
+    from backend.record_store import (
+        parlay_record,
+        pending_parlays,
+        store_parlay_slip,
+        void_parlay,
+    )
+
+    stored = store_parlay_slip(
+        YESTERDAY.isoformat(),
+        [{"game_pk": "gm-1", "side": "home", "team": "BOS"}],
+        0.55,
+        250,
+        None,
+    )
+    assert void_parlay(stored["slip_id"]) is True
+    # Terminal: leaves the pending queue, never regrades, never counts.
+    assert pending_parlays() == []
+    assert void_parlay(stored["slip_id"]) is False
+    record = parlay_record()
+    assert record["slips"] == 1
+    assert record["voided"] == 1
+    assert record["graded"] == 0
+    assert record["wins"] == 0
+    assert record["losses"] == 0
+    assert record["units_pnl"] == 0

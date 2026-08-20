@@ -8,5 +8,3 @@ psycopg[binary]
 uvicorn
 pytest
 pytest-asyncio
-pytest
-pytest-asyncio

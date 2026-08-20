@@ -46,12 +46,32 @@ CREATE TABLE moneyline_record_picks (
   final_home INTEGER,
   result TEXT,
   units_pnl DOUBLE PRECISION,
-  graded_at TIMESTAMPTZ
+  graded_at TIMESTAMPTZ,
+  -- v2 dual-price (ADJ) columns, matching ensure_schema()
+  probables JSONB,
+  adj_probability DOUBLE PRECISION,
+  adj_pick_team TEXT,
+  adj_fair_line INTEGER,
+  adj_result TEXT,
+  adj_units_pnl DOUBLE PRECISION
 );
 CREATE UNIQUE INDEX moneyline_record_game_idx
   ON moneyline_record_picks (game_pk);
 CREATE INDEX moneyline_record_grade_idx
   ON moneyline_record_picks (game_date, result);
+
+CREATE TABLE moneyline_parlay_slips (
+  id SERIAL PRIMARY KEY,
+  slip_date DATE NOT NULL UNIQUE,
+  legs JSONB NOT NULL,
+  combined_probability DOUBLE PRECISION NOT NULL,
+  fair_line INTEGER NOT NULL,
+  book_line INTEGER,
+  result TEXT,
+  units_pnl DOUBLE PRECISION,
+  graded_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 """
 
 
