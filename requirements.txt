@@ -6,3 +6,5 @@ fastapi
 httpx
 psycopg[binary]
 uvicorn
+pytest
+pytest-asyncio
