@@ -3,3 +3,4 @@
 - [Hidden backend errors](hidden-backend-errors.md) — feed routes convert every exception to 503 feed_unavailable; read API logs for the traceback before blaming the upstream feed.
 - [Frontend build env constraints](frontend-build-env-constraints.md) — vite config must not hard-require PORT/BASE_PATH at build time; deploy builds run without service env vars.
 - [Live season contract](live-season-contract.md) — the live year comes from /api/teams-live season, never hardcoded in UI copy, params, or route validation.
+- [Deployment startup probe & process split](deployment-startup-probe.md) — prod runs one backend.main (api) + lightweight serve_spa (web); two heavy processes time out the promote probe.

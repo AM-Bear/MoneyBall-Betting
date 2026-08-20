@@ -27,7 +27,7 @@ args = ["pnpm", "--filter", "@workspace/moneyline", "run", "start"]
 NODE_ENV = "production"
 
 [services.production.health.startup]
-path = "/api/health"
+path = "/"
 
 [services.env]
 PORT = "18612"

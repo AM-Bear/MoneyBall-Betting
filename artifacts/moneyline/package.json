@@ -8,7 +8,7 @@
     "build": "vite build --config vite.config.ts",
     "precompute": "cd ../.. && python -m backend.precompute",
     "build:production": "pnpm run precompute && pnpm run build",
-    "start": "cd ../.. && NODE_ENV=production python -m backend.main",
+    "start": "cd ../.. && NODE_ENV=production python -m backend.serve_spa",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
