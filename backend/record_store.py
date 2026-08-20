@@ -155,6 +155,27 @@ def grade_pick(
     return True
 
 
+def void_pick(game_pk: str) -> bool:
+    """Terminally resolve a pick whose game will never produce a final score.
+
+    Sets a VOID result at 0 units so the pick leaves the pending queue but is
+    never counted as a win or a loss. Already-graded picks are left untouched.
+    """
+    with _connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE moneyline_record_picks
+                SET result = 'VOID', units_pnl = 0, graded_at = NOW()
+                WHERE game_pk = %s AND result IS NULL
+                """,
+                (game_pk,),
+            )
+            voided = cursor.rowcount > 0
+        connection.commit()
+    return voided
+
+
 def get_record() -> dict[str, Any]:
     with _connection() as connection:
         with connection.cursor() as cursor:
@@ -173,6 +194,7 @@ def get_record() -> dict[str, Any]:
 
     wins = sum(row["result"] == "WIN" for row in rows)
     losses = sum(row["result"] == "LOSS" for row in rows)
+    voided = sum(row["result"] == "VOID" for row in rows)
     graded = wins + losses
     cumulative = 0.0
     graded_so_far = 0
@@ -180,7 +202,9 @@ def get_record() -> dict[str, Any]:
     curve: list[dict[str, Any]] = []
     serialized: list[dict[str, Any]] = []
     for row in rows:
-        if row["units_pnl"] is not None:
+        # Voided picks are terminal but carry 0 units and must never dilute
+        # the hit rate, so the curve only advances on decided picks.
+        if row["result"] in ("WIN", "LOSS"):
             graded_so_far += 1
             wins_so_far += row["result"] == "WIN"
             cumulative += float(row["units_pnl"])
@@ -210,6 +234,7 @@ def get_record() -> dict[str, Any]:
         "graded": graded,
         "wins": wins,
         "losses": losses,
+        "voided": voided,
         "hit_rate": round(wins / graded, 4) if graded else None,
         "units_pnl": round(cumulative, 3),
         "break_even_rate": round(110 / 210, 4),

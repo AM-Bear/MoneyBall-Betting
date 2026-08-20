@@ -7,7 +7,7 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -19,7 +19,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
 
-from backend.feeds import close_client, get_final_score, get_slate
+from backend.feeds import GameNotFound, close_client, get_final_score, get_slate
 from backend.inference import (
     load_data,
     load_models,
@@ -42,6 +42,7 @@ from backend.record_store import (
     grade_pick,
     pending_picks,
     store_slate_snapshot,
+    void_pick,
 )
 
 
@@ -102,34 +103,68 @@ def _error_response(code: str, message: str, status_code: int) -> JSONResponse:
     )
 
 
+VOID_AFTER_DAYS = max(int(os.getenv("VOID_AFTER_DAYS", "3")), 1)
+
+
 async def grade_pending_records() -> dict[str, int]:
     if not await asyncio.to_thread(database_available):
-        return {"checked": 0, "graded": 0}
+        return {"checked": 0, "graded": 0, "voided": 0}
     rows = await asyncio.to_thread(pending_picks)
     semaphore = asyncio.Semaphore(3)
-    graded = 0
 
-    async def grade_one(row: dict[str, Any]) -> bool:
+    async def grade_one(row: dict[str, Any]) -> str:
+        """Resolve one pending pick; returns 'graded', 'voided', or 'pending'."""
+        game_pk = str(row["game_pk"])
         async with semaphore:
             try:
-                final = await get_final_score(str(row["game_pk"]))
+                final = await get_final_score(game_pk)
+            except GameNotFound:
+                # A vanished game_pk usually means the game was rescheduled
+                # under a new pk. Give the feed a few days before voiding, in
+                # case the pk reappears.
+                cutoff = date.today() - timedelta(days=VOID_AFTER_DAYS)
+                if row["game_date"] <= cutoff and await asyncio.to_thread(
+                    void_pick, game_pk
+                ):
+                    logger.info(
+                        "record_pick_voided game_pk=%s reason=vanished", game_pk
+                    )
+                    return "voided"
+                return "pending"
+            except Exception:
+                logger.warning("record_grade_failed game_pk=%s", game_pk)
+                return "pending"
+            try:
                 if final is None:
-                    return False
-                return await asyncio.to_thread(
+                    return "pending"
+                if final.get("status") == "cancelled":
+                    if await asyncio.to_thread(void_pick, game_pk):
+                        logger.info(
+                            "record_pick_voided game_pk=%s reason=cancelled", game_pk
+                        )
+                        return "voided"
+                    return "pending"
+                graded = await asyncio.to_thread(
                     grade_pick,
-                    str(row["game_pk"]),
+                    game_pk,
                     int(final["final_away"]),
                     int(final["final_home"]),
                     str(final["away"]),
                     str(final["home"]),
                 )
+                return "graded" if graded else "pending"
             except Exception:
-                logger.warning("record_grade_failed game_pk=%s", row["game_pk"])
-                return False
+                logger.warning("record_grade_failed game_pk=%s", game_pk)
+                return "pending"
 
+    outcomes: list[str] = []
     if rows:
-        graded = sum(await asyncio.gather(*(grade_one(row) for row in rows)))
-    return {"checked": len(rows), "graded": graded}
+        outcomes = list(await asyncio.gather(*(grade_one(row) for row in rows)))
+    return {
+        "checked": len(rows),
+        "graded": outcomes.count("graded"),
+        "voided": outcomes.count("voided"),
+    }
 
 
 GRADE_INTERVAL_SECONDS = max(int(os.getenv("GRADE_INTERVAL_SECONDS", "1800")), 60)
@@ -173,9 +208,10 @@ async def grade_scheduler() -> None:
         try:
             result = await grade_pending_records()
             logger.info(
-                "record_autograde checked=%s graded=%s next_run_s=%s",
+                "record_autograde checked=%s graded=%s voided=%s next_run_s=%s",
                 result["checked"],
                 result["graded"],
+                result["voided"],
                 GRADE_INTERVAL_SECONDS,
             )
         except asyncio.CancelledError:
@@ -533,6 +569,7 @@ def _empty_record() -> dict[str, Any]:
         "graded": 0,
         "wins": 0,
         "losses": 0,
+        "voided": 0,
         "hit_rate": None,
         "units_pnl": 0,
         "break_even_rate": round(110 / 210, 4),

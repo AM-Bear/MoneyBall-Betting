@@ -68,6 +68,10 @@ class FeedUnavailable(RuntimeError):
     """Raised when an MLB feed cannot be used after one retry."""
 
 
+class GameNotFound(FeedUnavailable):
+    """Raised when the MLB feed no longer recognizes a game_pk (404)."""
+
+
 class AsyncTTLCache:
     def __init__(self, ttl_seconds: int) -> None:
         self.ttl_seconds = ttl_seconds
@@ -121,6 +125,13 @@ async def _fetch_json(path: str, params: dict[str, Any] | None = None) -> Any:
             response.raise_for_status()
             return response.json()
         except (httpx.HTTPError, ValueError) as error:
+            if (
+                isinstance(error, httpx.HTTPStatusError)
+                and error.response.status_code == 404
+            ):
+                raise GameNotFound(
+                    f"MLB Stats API has no resource at {path}."
+                ) from error
             last_error = error
             if attempt == 0:
                 await asyncio.sleep(0.25)
@@ -326,14 +337,25 @@ async def get_slate(schedule_date: date | None = None) -> dict[str, Any]:
 
 
 async def get_final_score(game_pk: str) -> dict[str, Any] | None:
+    """Resolve one game: a final score, a cancellation marker, or None (still pending).
+
+    Cancelled games report abstractGameState "Final" with no played innings, so
+    the cancellation check must run before the Final check — otherwise a 0–0
+    "final" would keep the pick pending forever.
+    """
     payload = await _fetch_json(f"/api/v1.1/game/{game_pk}/feed/live")
-    state = payload.get("gameData", {}).get("status", {}).get("abstractGameState")
-    if state != "Final":
+    status = payload.get("gameData", {}).get("status", {})
+    detailed_state = str(status.get("detailedState", ""))
+    coded_state = str(status.get("codedGameState", ""))
+    if coded_state == "C" or detailed_state.lower().startswith("cancel"):
+        return {"game_pk": game_pk, "status": "cancelled"}
+    if status.get("abstractGameState") != "Final":
         return None
     teams = payload["gameData"]["teams"]
     linescore = payload["liveData"]["linescore"]["teams"]
     return {
         "game_pk": game_pk,
+        "status": "final",
         "away": _team_code(str(teams["away"]["name"])),
         "home": _team_code(str(teams["home"]["name"])),
         "final_away": int(linescore["away"]["runs"]),

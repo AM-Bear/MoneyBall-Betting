@@ -6,7 +6,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from backend.record_store import get_record, grade_pick, pending_picks
+from backend.record_store import get_record, grade_pick, pending_picks, void_pick
 
 TODAY = date.today()
 YESTERDAY = TODAY - timedelta(days=1)
@@ -84,6 +84,61 @@ def test_already_graded_pick_cannot_be_regraded(seed_pick, fetch_pick):
 
 def test_missing_pick_returns_false(record_schema):
     assert grade_pick("gm-unknown", 3, 5, "NYY", "BOS") is False
+
+
+def test_void_pick_is_terminal_at_zero_units(seed_pick, fetch_pick):
+    seed_pick("gm-cancelled", YESTERDAY, "NYY", "BOS", pick_team="BOS")
+
+    assert void_pick("gm-cancelled") is True
+
+    row = fetch_pick("gm-cancelled")
+    assert row["result"] == "VOID"
+    assert row["units_pnl"] == 0
+    assert row["graded_at"] is not None
+    assert row["final_away"] is None
+    assert row["final_home"] is None
+    # Voided picks leave the pending queue, so the auto-grader stops polling.
+    assert pending_picks() == []
+    # And they never count as wins or losses.
+    record = get_record()
+    assert record["picks"] == 1
+    assert record["graded"] == 0
+    assert record["wins"] == 0
+    assert record["losses"] == 0
+    assert record["voided"] == 1
+    assert record["hit_rate"] is None
+    assert record["units_pnl"] == 0
+    assert record["curve"] == []
+
+
+def test_void_pick_never_overwrites_a_graded_result(seed_pick, fetch_pick):
+    seed_pick("gm-final", YESTERDAY, "NYY", "BOS", pick_team="BOS")
+    assert grade_pick("gm-final", 3, 5, "NYY", "BOS") is True
+
+    assert void_pick("gm-final") is False
+
+    row = fetch_pick("gm-final")
+    assert row["result"] == "WIN"
+    assert row["units_pnl"] == pytest.approx(100 / 110)
+
+
+def test_void_pick_missing_game_returns_false(record_schema):
+    assert void_pick("gm-unknown") is False
+
+
+def test_voided_pick_never_dilutes_hit_rate_or_curve(seed_pick):
+    seed_pick("gm-win", YESTERDAY, "NYY", "BOS", pick_team="BOS")
+    seed_pick("gm-void", YESTERDAY, "CHC", "STL", pick_team="STL")
+
+    assert grade_pick("gm-win", 3, 5, "NYY", "BOS") is True
+    assert void_pick("gm-void") is True
+
+    record = get_record()
+    assert record["graded"] == 1
+    assert record["voided"] == 1
+    assert record["hit_rate"] == pytest.approx(1.0)
+    assert len(record["curve"]) == 1
+    assert record["curve"][0]["hit_rate"] == pytest.approx(1.0)
 
 
 def test_pending_picks_excludes_graded_and_future_games(seed_pick):

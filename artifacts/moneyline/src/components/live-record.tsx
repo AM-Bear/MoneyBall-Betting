@@ -157,6 +157,8 @@ export function LiveRecordPanel() {
                       <Badge variant="success" className="px-1.5 py-0">W</Badge>
                     ) : entry.result === "LOSS" ? (
                       <Badge variant="destructive" className="px-1.5 py-0 text-destructive-foreground">L</Badge>
+                    ) : entry.result === "VOID" ? (
+                      <Badge variant="outline" className="px-1.5 py-0 text-muted-foreground">VOID</Badge>
                     ) : (
                       <Badge variant="outline" className="px-1.5 py-0 text-muted-foreground border-dashed">PENDING</Badge>
                     )}
