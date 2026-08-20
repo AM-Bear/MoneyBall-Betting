@@ -65,6 +65,27 @@ export function LiveRecordPanel() {
         </div>
       </div>
 
+      {gradeRecord.isError && (
+        <div className="mb-3 px-2 py-1.5 border border-destructive/40 bg-destructive/10 text-destructive font-mono text-[11px]">
+          GRADING FAILED — {gradeRecord.error instanceof Error ? gradeRecord.error.message.toUpperCase() : "UNKNOWN ERROR"}
+        </div>
+      )}
+      {gradeRecord.isSuccess && (
+        <div
+          className={`mb-3 px-2 py-1.5 border font-mono text-[11px] ${
+            gradeRecord.data.graded > 0
+              ? "border-success/40 bg-success/10 text-success"
+              : "border-border bg-muted/30 text-muted-foreground"
+          }`}
+        >
+          {gradeRecord.data.graded > 0
+            ? `GRADED ${gradeRecord.data.graded} PICK${gradeRecord.data.graded === 1 ? "" : "S"} — LEDGER UPDATED`
+            : gradeRecord.data.checked > 0
+              ? `CHECKED ${gradeRecord.data.checked} GAME${gradeRecord.data.checked === 1 ? "" : "S"} — NO FINALS AVAILABLE YET`
+              : "NO GAMES ELIGIBLE YET — PICKS GRADE AFTER THEIR GAME DATE PASSES"}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         {/* Stats & Chart */}
         <div className="md:col-span-2 flex flex-col gap-4">
