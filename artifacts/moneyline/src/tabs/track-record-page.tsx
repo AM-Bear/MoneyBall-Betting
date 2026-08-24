@@ -1,7 +1,7 @@
 import { BankrollPanel } from "@/components/bankroll-backtest";
 import { LiveRecordPanel } from "@/components/live-record";
-import { PanelError } from "@/components/layout";
 import { TrackRecordPanel } from "@/components/track-record";
+import { HistoricalBanner } from "@/components/record/historical-banner";
 import { ResearchTag } from "@/components/research-tag";
 import {
   StructuredData,
@@ -27,11 +27,21 @@ export default function TrackRecordPage() {
           <span className="status-label status-label-neutral">Public record</span>
           <span>Live picks are graded from the existing ledger. Historical backtests are simulations, not live performance.</span>
         </div>
-        <section className="record-grid" aria-label="Record views">
-          <TrackRecordPanel />
-          <BankrollPanel />
+
+        {/* Live first: it is the only section that grades picks the desk made
+            without knowing the answer. Historical follows, under its banner. */}
+        <section className="mt-6" aria-label="Live graded record">
+          <LiveRecordPanel />
         </section>
-        <LiveRecordPanel />
+
+        <section className="mt-8" aria-label="Historical tests">
+          <HistoricalBanner />
+          <div className="grid gap-6 xl:grid-cols-2">
+            <TrackRecordPanel />
+            <BankrollPanel />
+          </div>
+        </section>
+
         <ResearchTag />
       </main>
     </>

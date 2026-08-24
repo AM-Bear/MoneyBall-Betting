@@ -3,17 +3,21 @@ import { PanelSkeleton, PanelError } from "./layout";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Loader2 } from "lucide-react";
-import { 
-  LineChart, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
   ResponsiveContainer,
   ReferenceLine
 } from "recharts";
 import { formatProb } from "./slate-rail";
+import { CalibrationChart, CalibrationSummary } from "./record/calibration-chart";
+import { PickTable } from "./record/pick-table";
+import { ProofStatement } from "./record/proof-statement";
+import { formatPct, type RecordEntry } from "./record/record-stats";
 
 export function LiveRecordPanel() {
   const { data, isLoading, error } = useLiveRecord();
@@ -22,7 +26,25 @@ export function LiveRecordPanel() {
   if (isLoading) return <PanelSkeleton />;
   if (error || !data) return <PanelError message="Failed to load live record" />;
 
-  const { curve, entries, database_ready } = data;
+  const { curve, database_ready } = data;
+  const entries: RecordEntry[] = data.entries ?? [];
+
+  // Which model priced THESE rows -- not which model is loaded today. A row
+  // written before versioning carries NULL and is counted, not relabelled;
+  // saying "MODEL v1" over it would assert something never checked against
+  // it, which is the exact claim backend/record_store.py refuses to make.
+  const versionsPresent: string[] = data.model_versions_present ?? [];
+  const unversioned: number = data.unversioned_picks ?? 0;
+  const provenance =
+    versionsPresent.length === 0
+      ? unversioned > 0
+        ? `No pick here carries a model stamp: all ${unversioned} predate versioning, so the desk does not claim which model priced them.`
+        : ""
+      : unversioned > 0
+        ? `Mixed provenance — ${unversioned} pick${unversioned === 1 ? "" : "s"} carry no model stamp; the rest were priced by ${versionsPresent.join(", ")}. These rows are not all comparable.`
+        : versionsPresent.length === 1
+          ? `Priced by ${versionsPresent[0]}.`
+          : `Spans ${versionsPresent.join(" and ")} — these rows are not all comparable.`;
 
   if (!database_ready) {
     return <PanelError message="PERSISTENT STORE UNAVAILABLE — CANNOT VERIFY RECORD" />;
@@ -65,6 +87,11 @@ export function LiveRecordPanel() {
         </div>
       </div>
 
+      <p className="mb-3 text-xs leading-5 text-muted-foreground">
+        Every game on the slate, flat one unit, booked at the −110 fallback. This is a model
+        check, not a betting record — no price anyone was offered is recorded against these picks.
+      </p>
+
       {gradeRecord.isError && (
         <div className="mb-3 px-2 py-1.5 border border-destructive/40 bg-destructive/10 text-destructive font-mono text-[11px]">
           GRADING FAILED — {gradeRecord.error instanceof Error ? gradeRecord.error.message.toUpperCase() : "UNKNOWN ERROR"}
@@ -86,69 +113,87 @@ export function LiveRecordPanel() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Stats & Chart */}
-        <div className="md:col-span-2 flex flex-col gap-4">
-          {/* Dual-price grading: SEASON and ADJ side by side */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <div className="flex items-end gap-6 bg-background border border-border p-4 font-mono">
+      <div className="flex flex-col gap-4">
+        {/* Dual-price grading: SEASON and ADJ side by side */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="flex flex-wrap items-end gap-6 bg-background border border-border p-4 font-mono">
+            <div className="flex flex-col">
+              <span className="text-[10px] text-muted-foreground uppercase">Season Record</span>
+              <span className="text-3xl font-bold text-primary tracking-tighter">
+                {data.wins}–{data.losses}
+              </span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-muted-foreground uppercase">Win Rate</span>
+              <span className="text-2xl font-bold tracking-tighter">
+                {data.hit_rate !== null ? (data.hit_rate * 100).toFixed(1) : "0.0"}%
+              </span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-muted-foreground uppercase">Units (Flat -110)</span>
+              <span className="text-2xl font-bold tracking-tighter text-success">
+                {data.units_pnl > 0 ? "+" : ""}{data.units_pnl.toFixed(2)}u
+              </span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] text-muted-foreground uppercase">Break-even</span>
+              <span className="text-2xl font-bold tracking-tighter text-warning">
+                {formatPct(breakEvenRate)}
+              </span>
+              <span className="text-[9px] text-muted-foreground">110/210 at −110</span>
+            </div>
+          </div>
+
+          <div className="flex flex-col justify-between bg-background border border-warning/30 p-4 font-mono gap-2">
+            <div className="flex items-end gap-6">
               <div className="flex flex-col">
-                <span className="text-[10px] text-muted-foreground uppercase">Season Record</span>
-                <span className="text-3xl font-bold text-primary tracking-tighter">
-                  {data.wins}–{data.losses}
+                <span className="text-[10px] text-warning uppercase">ADJ Record</span>
+                <span className="text-3xl font-bold text-warning tracking-tighter">
+                  {data.adj_record ? `${data.adj_record.wins}–${data.adj_record.losses}` : "—"}
                 </span>
               </div>
               <div className="flex flex-col">
                 <span className="text-[10px] text-muted-foreground uppercase">Win Rate</span>
                 <span className="text-2xl font-bold tracking-tighter">
-                  {data.hit_rate !== null ? (data.hit_rate * 100).toFixed(1) : "0.0"}%
+                  {data.adj_record?.hit_rate != null ? `${(data.adj_record.hit_rate * 100).toFixed(1)}%` : "—"}
                 </span>
               </div>
               <div className="flex flex-col">
-                <span className="text-[10px] text-muted-foreground uppercase">Units (Flat -110)</span>
-                <span className="text-2xl font-bold tracking-tighter text-success">
-                  {data.units_pnl > 0 ? "+" : ""}{data.units_pnl.toFixed(2)}u
+                <span className="text-[10px] text-muted-foreground uppercase">Units</span>
+                <span className="text-2xl font-bold tracking-tighter">
+                  {data.adj_record?.units_pnl != null ? `${data.adj_record.units_pnl > 0 ? "+" : ""}${data.adj_record.units_pnl.toFixed(2)}u` : "—"}
                 </span>
               </div>
             </div>
-
-            <div className="flex flex-col justify-between bg-background border border-warning/30 p-4 font-mono gap-2">
-              <div className="flex items-end gap-6">
-                <div className="flex flex-col">
-                  <span className="text-[10px] text-warning uppercase">ADJ Record</span>
-                  <span className="text-3xl font-bold text-warning tracking-tighter">
-                    {data.adj_record ? `${data.adj_record.wins}–${data.adj_record.losses}` : "—"}
-                  </span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-[10px] text-muted-foreground uppercase">Win Rate</span>
-                  <span className="text-2xl font-bold tracking-tighter">
-                    {data.adj_record?.hit_rate != null ? `${(data.adj_record.hit_rate * 100).toFixed(1)}%` : "—"}
-                  </span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-[10px] text-muted-foreground uppercase">Units</span>
-                  <span className="text-2xl font-bold tracking-tighter">
-                    {data.adj_record?.units_pnl != null ? `${data.adj_record.units_pnl > 0 ? "+" : ""}${data.adj_record.units_pnl.toFixed(2)}u` : "—"}
-                  </span>
-                </div>
-              </div>
-              {data.adj_record?.note && (
-                <span className="text-[9px] text-muted-foreground leading-tight">{data.adj_record.note}</span>
-              )}
-            </div>
+            {data.adj_record?.note && (
+              <span className="text-[9px] text-muted-foreground leading-tight">{data.adj_record.note}</span>
+            )}
           </div>
+        </div>
 
-          {data.parlay_record && (
-            <div className="bg-background border border-border px-4 py-2 font-mono text-xs flex flex-wrap items-center gap-4">
-              <span className="text-[10px] text-muted-foreground uppercase">Paper Parlays</span>
-              <span className="font-bold text-primary">{data.parlay_record.line}</span>
-              <span className="text-muted-foreground text-[10px]">
-                {data.parlay_record.slips} SLIP{data.parlay_record.slips === 1 ? "" : "S"} LOGGED · GRADED ALL-OR-NOTHING
+        {data.parlay_record && (
+          <div className="bg-background border border-border px-4 py-2 font-mono text-xs flex flex-wrap items-center gap-4">
+            <span className="text-[10px] text-muted-foreground uppercase">Paper Parlays</span>
+            <span className="font-bold text-primary">{data.parlay_record.line}</span>
+            <span className="text-muted-foreground text-[10px]">
+              {data.parlay_record.slips} SLIP{data.parlay_record.slips === 1 ? "" : "S"} LOGGED · GRADED ALL-OR-NOTHING · ONE PUBLIC PAPER SLIP PER DAY
+            </span>
+            {/* The parlay table is the one whose grading basis changed. Saying
+                what these slips are made of is the disclosure that replaces
+                regrading them -- the record is reported, not corrected. */}
+            {(data.parlay_record.fallback_graded ?? 0) > 0 && (
+              <span className="w-full text-muted-foreground text-[10px] leading-4 normal-case">
+                {data.parlay_record.fallback_graded} of {data.parlay_record.graded} graded
+                slip{data.parlay_record.graded === 1 ? "" : "s"} had no book price recorded
+                and {data.parlay_record.fallback_graded === 1 ? "was" : "were"} settled at
+                the −110 legs compounded, the same fallback picks use. No sportsbook price
+                is recorded against any slip here.
               </span>
-            </div>
-          )}
+            )}
+          </div>
+        )}
 
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div className="h-64 border border-border bg-background p-2">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
@@ -172,51 +217,38 @@ export function LiveRecordPanel() {
               </LineChart>
             </ResponsiveContainer>
           </div>
+          <p className="sr-only">
+            Running hit rate and cumulative units after each decided pick, from{" "}
+            {data.tracking_since ?? "the first pick"} to now. It ends at{" "}
+            {data.hit_rate !== null ? formatPct(data.hit_rate) : "no rate yet"} on{" "}
+            {data.graded} decided picks and {data.units_pnl.toFixed(2)} units, against a
+            break-even of {formatPct(breakEvenRate)}.
+          </p>
+
+          <ProofStatement
+            entries={entries}
+            wins={data.wins}
+            losses={data.losses}
+            graded={data.graded}
+            breakEvenRate={breakEvenRate}
+            sampleLabel={data.sample_label ?? null}
+            trackingSince={data.tracking_since ?? null}
+          />
         </div>
 
-        {/* Ledger Table */}
-        <div className="md:col-span-1 border border-border bg-background flex flex-col h-full max-h-[350px]">
-          <div className="p-2 border-b border-border bg-muted/30 text-[10px] font-mono font-bold text-muted-foreground flex justify-between uppercase">
-            <span>Recent Picks</span>
-            <span>Grade</span>
-          </div>
-          <div className="overflow-y-auto flex-1 p-2 flex flex-col gap-1 font-mono text-xs">
-            {entries.length === 0 ? (
-              <div className="text-center p-4 text-muted-foreground">NO GRADED PICKS YET</div>
-            ) : (
-              entries.map((entry: any, i: number) => (
-                <div key={i} className="flex justify-between items-center p-2 border border-border/50 hover:border-border bg-card/50">
-                  <div className="flex flex-col">
-                    <span className="text-[9px] text-muted-foreground">{entry.game_date}</span>
-                    <span className="font-bold">{entry.pick_team}</span>
-                    <span className="text-[10px] text-primary">{formatProb(entry.model_probability)}</span>
-                    {entry.adj_pick_team && (
-                      <span className="text-[9px] text-warning">
-                        ADJ {entry.adj_pick_team} {formatProb(entry.adj_probability)}
-                        {entry.adj_result && (
-                          <span className={entry.adj_result === "WIN" ? " text-success" : entry.adj_result === "LOSS" ? " text-destructive" : ""}>
-                            {" "}· {entry.adj_result.charAt(0)}
-                          </span>
-                        )}
-                      </span>
-                    )}
-                  </div>
-                  <div>
-                    {entry.result === "WIN" ? (
-                      <Badge variant="success" className="px-1.5 py-0">W</Badge>
-                    ) : entry.result === "LOSS" ? (
-                      <Badge variant="destructive" className="px-1.5 py-0 text-destructive-foreground">L</Badge>
-                    ) : entry.result === "VOID" ? (
-                      <Badge variant="outline" className="px-1.5 py-0 text-muted-foreground">VOID</Badge>
-                    ) : (
-                      <Badge variant="outline" className="px-1.5 py-0 text-muted-foreground border-dashed">PENDING</Badge>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+        <CalibrationChart entries={entries} />
+        <CalibrationSummary entries={entries} />
+
+        <PickTable entries={entries} trackingSince={data.tracking_since ?? null} />
+
+        <p className="text-[10px] leading-4 text-muted-foreground font-mono">
+          METHOD · Hit-rate band is a Wilson score interval; the units-per-pick band is
+          mean ± 1.96 × sd/√n. Both are computed in the browser from the {entries.length}{" "}
+          rows above, and both exclude VOID and pending picks exactly as the ledger does.
+          Break-even {formatPct(breakEvenRate)} is 110/210, the −110 fallback the ledger books at.
+          {" "}
+          {provenance}
+        </p>
       </div>
     </div>
   );
