@@ -68,6 +68,19 @@ try {
     page.on("pageerror", (error) => pageErrors.push(error.message));
 
     try {
+      // The production smoke checks protected routes, so provide the smallest
+      // authenticated session fixture without coupling this test to auth
+      // credentials or a live OAuth provider.
+      await page.route("**/api/auth/session", async (routeRequest) => {
+        await routeRequest.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            authenticated: true,
+            user: { id: "smoke-user", email: "smoke@example.test", name: "Smoke User" },
+          }),
+        });
+      });
       await page.goto(`${baseUrl}${route.requested}`, {
         waitUntil: "domcontentloaded",
         timeout: 30_000,

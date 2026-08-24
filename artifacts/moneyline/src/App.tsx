@@ -14,8 +14,9 @@ import ResearchHub from '@/tabs/research-hub';
 import TrackRecordPage from '@/tabs/track-record-page';
 import SettingsPage from '@/tabs/settings';
 
-import { useHealth, useSlate } from '@/api';
+import { useHealth, useSession, useSlate } from '@/api';
 import { applySeoMetadata } from '@/seo';
+import { AuthScreen } from '@/components/auth';
 
 const queryClient = new QueryClient();
 
@@ -180,6 +181,7 @@ function Shell() {
   const health = useHealth();
   const slate = useSlate();
   const [location, navigate] = useLocation();
+  const session = useSession();
 
   useEffect(() => {
     applySeoMetadata(location);
@@ -214,6 +216,7 @@ function Shell() {
       <CommandBar
         slateStatus={slateMode === "live" ? "LIVE" : slateMode === "historical" ? "HISTORICAL" : "ERROR"}
         lastUpdated={slate.data?.updated_at || slate.data?.date}
+        user={session.data?.user}
       />
 
       <Switch>
@@ -248,13 +251,28 @@ function Shell() {
   );
 }
 
+function SessionGate() {
+  const session = useSession();
+  const [location] = useLocation();
+  const path = location || '/';
+  if (session.isLoading) {
+    return <main className="auth-page min-h-[100dvh] flex items-center justify-center bg-background"><div className="font-mono text-xs uppercase tracking-widest text-muted-foreground" role="status">Checking session…</div></main>;
+  }
+  if (session.data?.authenticated && session.data.user) return <Shell />;
+  return <AuthScreen returnTo={safeReturnPath(path)} serverError={!!session.error && !(session.error instanceof Error && 'status' in session.error && (session.error as { status?: number }).status === 401)} />;
+}
+
+function safeReturnPath(path: string) {
+  return path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/auth') ? path : '/';
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}>
           <ErrorBoundary>
-            <Shell />
+            <SessionGate />
           </ErrorBoundary>
         </WouterRouter>
         <Toaster />

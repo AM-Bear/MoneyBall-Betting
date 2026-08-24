@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useTeams, useTeamsLive } from "@/api";
 import { usePlayerHits } from "./player-search";
+import { AuthUser, useAuthActions } from "@/api";
 
 export const TABS = [
   { label: "Today", path: "/" },
@@ -203,13 +204,18 @@ function OmniSearch() {
 
 export function CommandBar({
   slateStatus = "LIVE",
-  lastUpdated
+  lastUpdated,
+  user,
 }: {
   slateStatus?: "LIVE" | "HISTORICAL" | "ERROR";
   lastUpdated?: string;
+  user?: AuthUser | null;
 }) {
   const [location] = useLocation();
   const updatedTime = formatUpdatedAt(lastUpdated);
+  const { logout } = useAuthActions();
+  const [confirmLogout, setConfirmLogout] = useState(false);
+  const [, navigate] = useLocation();
 
   return (
     <header className="border-b border-border bg-card px-4 py-2 flex items-center justify-between gap-4 sticky top-0 z-40 flex-wrap">
@@ -243,7 +249,7 @@ export function CommandBar({
         <OmniSearch />
       </div>
 
-       <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
+        <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
         {updatedTime && <span className="hidden sm:inline">{updatedTime}</span>}
         <div className="flex items-center gap-2 border border-border px-2 py-1 bg-background">
           <span className={cn(
@@ -257,6 +263,11 @@ export function CommandBar({
             slateStatus === "HISTORICAL" ? "text-warning" : "text-destructive"
            )}>{slateStatus === "LIVE" ? "Live" : slateStatus === "HISTORICAL" ? "Historical" : "Unavailable"}</span>
         </div>
+         {user && <div className="flex items-center gap-2 border-l border-border pl-3">
+           <span className="hidden max-w-28 truncate sm:inline" title={user.email}>{user.name || user.email}</span>
+           {confirmLogout ? <><span className="text-warning">Sign out?</span><button type="button" disabled={logout.isPending} onClick={() => logout.mutate(undefined, { onSuccess: () => navigate('/') })} className="moneyline-focus-ring text-primary hover:underline">{logout.isPending ? '…' : 'Yes'}</button><button type="button" onClick={() => setConfirmLogout(false)} className="moneyline-focus-ring hover:text-foreground">No</button></> :
+             <button type="button" onClick={() => setConfirmLogout(true)} className="moneyline-focus-ring hover:text-foreground" aria-label="Sign out">LOG OUT</button>}
+         </div>}
       </div>
     </header>
   );

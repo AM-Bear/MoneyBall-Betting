@@ -15,16 +15,77 @@ export class ApiError extends Error {
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
       ...options?.headers,
     },
   });
-  const data = await res.json();
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new ApiError(data.error?.message || 'API Error', data.error?.code || 'unknown', res.status);
+    const error = data.error || data;
+    throw new ApiError(error?.message || 'API Error', error?.code || 'unknown', res.status);
   }
-  return data;
+  return (data.data ?? data) as T;
+}
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name?: string | null;
+  avatar_url?: string | null;
+}
+export interface SessionResponse { authenticated: boolean; user: AuthUser | null }
+export interface AuthMessage { message?: string }
+
+export function useSession() {
+  const queryClient = useQueryClient();
+  const query = useQuery<SessionResponse, Error>({
+    queryKey: ['auth', 'session'],
+    queryFn: async () => {
+      try {
+        return await fetchApi<SessionResponse>('/auth/session');
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 401) {
+          queryClient.setQueryData(['auth', 'session'], { authenticated: false, user: null });
+        }
+        throw error;
+      }
+    },
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  return query;
+}
+
+export function useAuthActions() {
+  const queryClient = useQueryClient();
+  const clearSession = () => {
+    queryClient.setQueryData(['auth', 'session'], { authenticated: false, user: null });
+    queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== 'auth' });
+  };
+  const mutation = (path: string) => useMutation({
+    mutationFn: (payload?: Record<string, string>) => fetchApi<AuthMessage>(path, {
+      method: 'POST',
+      body: JSON.stringify(payload || {}),
+    }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['auth', 'session'] }),
+  });
+  return {
+    login: mutation('/auth/login'),
+    signup: mutation('/auth/signup'),
+    forgotPassword: mutation('/auth/password-reset/request'),
+    resetPassword: mutation('/auth/password-reset/complete'),
+    logout: useMutation({
+      mutationFn: () => fetchApi<AuthMessage>('/auth/logout', { method: 'POST' }),
+      onSuccess: clearSession,
+      onError: clearSession,
+    }),
+  };
+}
+
+export function googleSignInUrl(returnTo: string) {
+  return `${API_BASE}/auth/google?return_to=${encodeURIComponent(returnTo)}`;
 }
 
 // Hooks
