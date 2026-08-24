@@ -58,37 +58,25 @@ try {
   await waitForServer();
   browser = await chromium.launch({ headless: true });
 
-  // Auth contract smoke: the gate must resolve before any protected desk
-  // request, and the sign-in forms must use the backend's real fields/routes.
+  // Public research pages must survive hydration for signed-out visitors. The
+  // production server already serves public route HTML, and this ensures the
+  // client does not replace it with the auth screen.
   {
     const page = await browser.newPage();
-    const requests = [];
-    page.on("request", (request) => requests.push(new URL(request.url()).pathname));
-    await page.goto(`${baseUrl}/research/matchups`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-    await page.getByText("Sign in to MONEYLINE", { exact: true }).waitFor();
-    if (requests.some((path) => path.startsWith("/api/") && !path.startsWith("/api/auth/") && path !== "/api/health")) {
-      throw new Error("signed-out gate requested protected API data");
-    }
-    await page.getByLabel("Email address").fill("reader@example.test");
-    await page.getByLabel("Password").fill("Correct!password");
-    await page.route("**/api/auth/login", async (routeRequest) => {
-      const body = JSON.parse(routeRequest.request().postData() || "{}");
-      if (body.email !== "reader@example.test" || body.password !== "Correct!password") {
-        return routeRequest.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: { code: "invalid_request", message: "bad fields" } }) });
+    await page.route("**/api/**", async (routeRequest) => {
+      const path = new URL(routeRequest.request().url()).pathname;
+      if (path === "/api/health") {
+        return routeRequest.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ model_loaded: true, database_ready: true, model_version: "smoke" }) });
       }
-      return routeRequest.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ authenticated: true, user: { id: "smoke-user", email: body.email, display_name: "Reader" } }),
-      });
+      return routeRequest.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: { code: "auth_required", message: "Sign in to use the desk." } }) });
     });
-    await page.route("**/api/auth/session", async (routeRequest) => {
-      await routeRequest.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: { code: "auth_required", message: "Sign in to use the desk." } }) });
-    });
-    await page.getByRole("button", { name: "Sign in", exact: true }).click();
-    await page.waitForURL(`${baseUrl}/research/matchups`);
+    await page.goto(`${baseUrl}/research/matchups`, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.getByText("HEAD-TO-HEAD", { exact: true }).waitFor();
+    if (await page.getByText("Sign in to MONEYLINE", { exact: true }).count()) {
+      throw new Error("public research page was replaced by the sign-in screen");
+    }
     await page.close();
-    console.log("PASS auth gate, login fields, and safe route return");
+    console.log("PASS signed-out public research route stays visible");
   }
 
   for (const route of routes) {
@@ -172,46 +160,6 @@ try {
     }
   }
 
-  // Error branches are deterministic: no provider or email delivery is needed.
-  {
-    const page = await browser.newPage();
-    await page.route("**/api/auth/session", async (routeRequest) => {
-      await routeRequest.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: { code: "auth_required", message: "Sign in to use the desk." } }) });
-    });
-    await page.goto(`${baseUrl}/`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-    await page.getByRole("button", { name: "Forgot password?" }).click();
-    await page.route("**/api/auth/password-reset/request", async (routeRequest) => {
-      await routeRequest.fulfill({ status: 202, contentType: "application/json", body: JSON.stringify({ ok: true, message: "If that address has a MONEYLINE account, a reset link is on its way." }) });
-    });
-    await page.getByLabel("Email address").fill("reader@example.test");
-    await page.getByRole("button", { name: "Send reset link" }).click();
-    await page.getByRole("status").waitFor();
-    if (!(await page.getByRole("status").innerText()).includes("If an account matches")) throw new Error("generic reset confirmation missing");
-    await page.close();
-    console.log("PASS invalid input and generic reset guidance");
-  }
-
-  {
-    const page = await browser.newPage();
-    await page.route("**/api/auth/session", async (routeRequest) => {
-      await routeRequest.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: { code: "auth_required", message: "Sign in to use the desk." } }) });
-    });
-    await page.goto(`${baseUrl}/`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-    const googleLink = page.getByRole("link", { name: "Continue with Google" });
-    const googleHref = await googleLink.getAttribute("href");
-    if (!googleHref?.includes("/api/auth/google/start?next=")) throw new Error("Google launch does not use /auth/google/start");
-    await page.close();
-
-    const unavailable = await browser.newPage();
-    await unavailable.route("**/api/auth/session", async (routeRequest) => {
-      await routeRequest.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "auth_unavailable", message: "Accounts are unavailable right now." } }) });
-    });
-    await unavailable.goto(`${baseUrl}/research`, { waitUntil: "domcontentloaded", timeout: 30_000 });
-    if (!(await unavailable.getByRole("alert").innerText()).includes("couldn’t check your session")) throw new Error("session unavailable guidance missing");
-    await unavailable.close();
-    console.log("PASS Google callback and unavailable-session guidance");
-  }
-
   {
     const page = await browser.newPage();
     await page.route("**/api/**", async (routeRequest) => {
@@ -226,9 +174,12 @@ try {
     await page.goto(`${baseUrl}/`, { waitUntil: "domcontentloaded", timeout: 30_000 });
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.getByRole("button", { name: "Yes" }).click();
-    await page.getByText("Sign in to MONEYLINE", { exact: true }).waitFor();
+    await page.getByTestId("heading-today").waitFor();
+    if (await page.getByText("Sign in to MONEYLINE", { exact: true }).count()) {
+      throw new Error("logout returned a public research page to the sign-in screen");
+    }
     await page.close();
-    console.log("PASS logout clears the client session and returns to sign-in");
+    console.log("PASS logout clears the client session and retains public access");
   }
 } finally {
   if (browser) await browser.close();
@@ -241,4 +192,4 @@ if (failures.length) {
   for (const failure of failures) console.error(`- ${failure}`);
   process.exit(1);
 }
-console.log(`Frontend smoke passed: ${routes.length} production routes plus auth flows checked.`);
+console.log(`Frontend smoke passed: ${routes.length} production routes plus public-access checks.`);

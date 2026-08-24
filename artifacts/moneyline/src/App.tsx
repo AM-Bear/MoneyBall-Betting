@@ -23,6 +23,7 @@ const queryClient = new QueryClient();
 
 export const PUBLIC_RESEARCH_ROUTES = [
   '/',
+  '/desk',
   '/research',
   '/track-record',
   '/research/players',
@@ -30,7 +31,24 @@ export const PUBLIC_RESEARCH_ROUTES = [
   '/research/parlay',
   '/research/season',
   '/research/wire',
+  // Legacy paths remain public so existing links can reach their canonical
+  // research route before the client redirect runs.
+  '/players',
+  '/h2h',
+  '/parlay',
+  '/season',
+  '/wire',
+  // This route is public but intentionally noindex; it is part of the
+  // backend's public SPA allowlist so signed-out preference views can render.
+  '/settings',
 ] as const;
+
+const PUBLIC_RESEARCH_ROUTE_SET = new Set<string>(PUBLIC_RESEARCH_ROUTES);
+
+function isPublicResearchRoute(location: string) {
+  const path = location.split(/[?#]/, 1)[0].replace(/\/+$/, '') || '/';
+  return PUBLIC_RESEARCH_ROUTE_SET.has(path);
+}
 
 const ROUTE_METADATA: Record<string, {
   title: string;
@@ -262,6 +280,10 @@ function SessionGate() {
   const session = useSession();
   const [location] = useLocation();
   const path = location || '/';
+  // The server serves useful, public research HTML for these paths. Keep the
+  // hydrated client on the same public route instead of replacing it with the
+  // auth screen while session state is loading or absent.
+  if (isPublicResearchRoute(path)) return <Shell />;
   if (session.isLoading) {
     return <main className="auth-page min-h-[100dvh] flex items-center justify-center bg-background"><div className="font-mono text-xs uppercase tracking-widest text-muted-foreground" role="status">Checking session…</div></main>;
   }
