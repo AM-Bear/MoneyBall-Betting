@@ -260,6 +260,32 @@ def require_feature(feature: str):
         return user
     return dependency
 
+def is_configured_desk_user(user_id: str) -> bool:
+    return user_id in {
+        value.strip()
+        for value in os.getenv("MONEYLINE_DESK_USER_IDS", "").split(",")
+        if value.strip()
+    }
+
+
+async def require_parlay_log_actor(
+    user: dict[str, Any] = Depends(require_feature("parlay")),
+) -> dict[str, Any]:
+    """Only an explicitly configured desk account may write the shared ledger.
+
+    Entitlement remains the first gate so an unentitled account cannot use
+    this internal writer to discover whether it is on the desk allow-list.
+    An absent allow-list is deliberately closed rather than treating every
+    paying subscriber as an application-wide actor.
+    """
+    if not is_configured_desk_user(str(user["id"])):
+        raise MoneylineError(
+            "desk_authorization_required",
+            "This ledger writer is limited to configured MONEYLINE desk accounts.",
+            403,
+        )
+    return user
+
 
 VOID_AFTER_DAYS = max(int(os.getenv("VOID_AFTER_DAYS", "3")), 1)
 SLATE_DATE_WINDOW_DAYS = max(int(os.getenv("SLATE_DATE_WINDOW_DAYS", "7")), 0)
@@ -1311,7 +1337,7 @@ async def wire(
 @app.post("/api/parlay/log")
 async def parlay_log(
     payload: ParlayInput,
-    user: dict[str, Any] = Depends(require_feature("parlay")),
+    user: dict[str, Any] = Depends(require_parlay_log_actor),
 ) -> dict[str, Any]:
     if not await asyncio.to_thread(database_available):
         raise MoneylineError(
@@ -1320,7 +1346,10 @@ async def parlay_log(
             503,
         )
     legs = await _resolve_parlay_legs(payload)
-    priced = _price_parlay_payload(legs, payload.book_odds)
+    # The desk actor writes the application ledger, not a personal paper slip.
+    # Never let caller-supplied book odds become settlement input there.
+    book_odds = None if is_configured_desk_user(str(user["id"])) else payload.book_odds
+    priced = _price_parlay_payload(legs, book_odds)
     slip_date = legs[0]["game_date"]
     stored = await asyncio.to_thread(
         store_parlay_slip,
@@ -1328,7 +1357,7 @@ async def parlay_log(
         legs,
         priced["combined_prob"],
         priced["fair_odds"],
-        payload.book_odds,
+        book_odds,
         str(user["id"]),
     )
     return {

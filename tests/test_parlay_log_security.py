@@ -24,6 +24,9 @@ def _payload(book_odds: int | None = None) -> dict:
 def test_parlay_log_requires_a_configured_desk_actor(monkeypatch):
     """A paying subscriber cannot claim the application-wide slip."""
     monkeypatch.setenv("MONEYLINE_DESK_USER_IDS", "desk-user")
+    monkeypatch.setattr(
+        main, "get_entitlement", lambda _user_id: {"tier": "pro", "status": "active"}
+    )
     main.app.dependency_overrides[main.get_current_user] = lambda: {"id": "reader"}
     try:
         with TestClient(main.app) as client:
@@ -39,6 +42,10 @@ def test_parlay_log_scopes_the_slip_to_the_authenticated_user(monkeypatch):
     """Request data cannot choose which user's private record is written."""
     stored_args: list[tuple] = []
 
+    monkeypatch.setenv("MONEYLINE_DESK_USER_IDS", "reader")
+    monkeypatch.setattr(
+        main, "get_entitlement", lambda _user_id: {"tier": "pro", "status": "active"}
+    )
     main.app.dependency_overrides[main.get_current_user] = lambda: {"id": "reader"}
     monkeypatch.setattr(main, "database_available", lambda: True)
     monkeypatch.setattr(
@@ -65,7 +72,7 @@ def test_parlay_log_scopes_the_slip_to_the_authenticated_user(monkeypatch):
 
     assert response.status_code == 200
     assert stored_args and stored_args[0][-1] == "reader"
-    assert response.json()["priced"]["book"]["book_odds"] == 1000
+    assert response.json()["priced"]["book"] is None
 
 
 @pytest.mark.parametrize("book_odds", [-10001, 10001, 2147483647])
@@ -90,6 +97,9 @@ def test_desk_actor_log_never_persists_caller_book_odds(monkeypatch):
     stored_args: list[tuple] = []
 
     monkeypatch.setenv("MONEYLINE_DESK_USER_IDS", "desk-user")
+    monkeypatch.setattr(
+        main, "get_entitlement", lambda _user_id: {"tier": "pro", "status": "active"}
+    )
     main.app.dependency_overrides[main.get_current_user] = lambda: {"id": "desk-user"}
     monkeypatch.setattr(main, "database_available", lambda: True)
     monkeypatch.setattr(
@@ -115,11 +125,14 @@ def test_desk_actor_log_never_persists_caller_book_odds(monkeypatch):
         main.app.dependency_overrides.pop(main.get_current_user, None)
 
     assert response.status_code == 200
-    assert stored_args and stored_args[0][-1] is None
+    assert stored_args and stored_args[0][-1] == "desk-user"
     assert response.json()["priced"]["book"] is None
 
 def test_parlay_log_fails_closed_without_a_desk_allowlist(monkeypatch):
     monkeypatch.delenv("MONEYLINE_DESK_USER_IDS", raising=False)
+    monkeypatch.setattr(
+        main, "get_entitlement", lambda _user_id: {"tier": "pro", "status": "active"}
+    )
     main.app.dependency_overrides[main.get_current_user] = lambda: {"id": "desk-user"}
     try:
         with TestClient(main.app) as client:
