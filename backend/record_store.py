@@ -10,6 +10,13 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
+from backend.odds import parlay_book_decimal
+
+# The price a slip is graded at when no book line was recorded. Picks already
+# grade at a standard -110 (record_store.py grade_pick); this is the parlay
+# analogue -- the same -110 legs, compounded. See STANDARD_LEG_LINE use below.
+STANDARD_LEG_LINE = -110
+
 
 def _connection() -> psycopg.Connection[Any]:
     database_url = os.getenv("DATABASE_URL")
@@ -406,9 +413,17 @@ def grade_parlay(slip_id: int, leg_outcomes: dict[str, str]) -> bool:
                     return False  # a leg is not final yet — stay pending
                 outcomes.append(leg["team"] == winner)
             won = all(outcomes)
-            line = row["book_line"] if row["book_line"] is not None else row["fair_line"]
-            line = int(line)
-            payout = 100 / abs(line) if line < 0 else line / 100
+            if row["book_line"] is not None:
+                line = int(row["book_line"])
+                payout = 100 / abs(line) if line < 0 else line / 100
+            else:
+                # No book price was recorded. This used to fall back to the
+                # slip's own fair_line -- grading the parlay as if you had been
+                # offered the model's price, which no book offers. That made the
+                # parlay record systematically optimistic, and inconsistent with
+                # picks, which fall back to a standard -110 (see grade_pick).
+                # Use the parlay analogue: the same -110 legs, compounded.
+                payout = parlay_book_decimal([STANDARD_LEG_LINE] * len(legs)) - 1
             units_pnl = payout if won else -1.0
             cursor.execute(
                 """

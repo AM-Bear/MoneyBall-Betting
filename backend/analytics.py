@@ -243,12 +243,13 @@ def score_pulse_items(items: list[dict[str, Any]]) -> dict[str, Any]:
     evidence: list[dict[str, Any]] = []
     for item in items:
         text = f" {item.get('text', '')} ".lower()
-        matched_positive = [
-            word for word in PULSE_POSITIVE if word if _matches(text, word)
-        ]
-        matched_negative = [
-            word for word in PULSE_NEGATIVE if word if _matches(text, word)
-        ]
+        hits_positive = [word for word in PULSE_POSITIVE if word if _matches(text, word)]
+        hits_negative = [word for word in PULSE_NEGATIVE if word if _matches(text, word)]
+        # Resolve overlaps across BOTH lists before counting: "losing streak"
+        # must beat "streak", and the winner may sit in the other polarity.
+        surviving = set(_drop_subsumed(hits_positive + hits_negative))
+        matched_positive = [word for word in hits_positive if word in surviving]
+        matched_negative = [word for word in hits_negative if word in surviving]
         positives += len(matched_positive)
         negatives += len(matched_negative)
         if matched_positive or matched_negative:
@@ -280,6 +281,36 @@ def score_pulse_items(items: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _matches(text: str, word: str) -> bool:
+    """Lexicon match with a boundary on both ends.
+
+    The leading boundary was always there; the trailing one was not, so "torn"
+    matched "tornado" and scored a healthy roster as an injury. A bare trailing
+    boundary would over-correct: the lexicon lists most variants explicitly
+    ("sweep"/"swept", "clinch"/"clinched") but not all of them, and "sprain"
+    is relied on to catch "sprained". So a short inflectional tail is allowed
+    and anything longer is not — "sprain|ed" matches, "torn|ado" does not.
+    """
     if word.startswith(" ") or word.endswith(" "):
         return word in text
-    return re.search(rf"(?<![a-z]){re.escape(word)}", text) is not None
+    pattern = rf"(?<![a-z]){re.escape(word)}(?:s|es|ed|ing)?(?![a-z])"
+    return re.search(pattern, text) is not None
+
+
+def _drop_subsumed(matched: list[str]) -> list[str]:
+    """Drop any matched term wholly contained in a longer matched term.
+
+    Two lexicon entries can fire on one phrase, and the shorter one is then
+    always wrong. "losing streak" is negative but contains "streak", which is
+    positive, so a losing streak scored +1 and −1 — no net move, but it
+    inflated the denominator and diluted every other item's contribution.
+    "clinched" contains "clinch" and both are positive, so a clinch counted
+    twice. Keeping only the longest match at each hit fixes both, and any
+    future overlap, without the lexicon needing to stay free of substrings.
+    """
+    return [
+        word
+        for word in matched
+        if not any(
+            other != word and word.strip() in other.strip() for other in matched
+        )
+    ]
