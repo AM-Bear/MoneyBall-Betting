@@ -96,8 +96,23 @@ def _install(monkeypatch: pytest.MonkeyPatch, rss: Any, espn: Any) -> _FakeClien
 def test_news_source_constants_are_defined() -> None:
     """The regression guard: these three names were referenced but never defined."""
     assert feeds.RSS_URL == "https://www.mlb.com/feeds/news/rss.xml"
-    assert feeds.ESPN_NEWS_URL.startswith("https://site.api.espn.com/")
+    assert feeds.ESPN_NEWS_URL.startswith("https://site.web.api.espn.com/")
     assert feeds._espn_dead is False
+
+
+def test_espn_uses_the_origin_that_answers_our_own_user_agent() -> None:
+    """The host is load-bearing, not incidental.
+
+    `site.api.espn.com` sits behind an Akamai edge that 403s
+    `USER_AGENT`; `site.web.api.espn.com` is served from ESPN's AWS origins
+    and answers the same request with a byte-identical payload. Pinned here
+    because the obvious "fix" for the 403 is to send a browser User-Agent
+    instead -- which would be a lie, and would apply to every
+    statsapi.mlb.com call too, since USER_AGENT is shared. If someone
+    reverts the host, this test should stop them and explain why.
+    """
+    assert "site.web.api.espn.com" in feeds.ESPN_NEWS_URL
+    assert "MONEYLINE" in feeds.USER_AGENT
 
 
 async def test_get_news_parses_mlb_rss(monkeypatch: pytest.MonkeyPatch) -> None:

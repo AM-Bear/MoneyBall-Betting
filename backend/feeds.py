@@ -35,7 +35,15 @@ USER_AGENT = "MONEYLINE/1.0 (statistical research terminal)"
 # optional second source the spec allows and must never be a dependency.
 # Dated curl transcripts for both live in notes/mlb_api_transcripts.md §8, §9.
 RSS_URL = "https://www.mlb.com/feeds/news/rss.xml"
-ESPN_NEWS_URL = "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/news"
+# site.web.api.espn.com, not site.api.espn.com. The latter sits behind an
+# Akamai edge that 403s our identifying User-Agent; the former is served from
+# ESPN's AWS origins and answers it with a byte-identical payload (34207 bytes,
+# same 6 articles, verified 2026-08-24 -- see notes/decision-espn-user-agent.md).
+# This is the honest fix: the alternative was presenting a browser User-Agent to
+# get around the block, and USER_AGENT is shared with every statsapi.mlb.com
+# call, so faking it there would have been both a lie and a wider blast radius.
+# Still optional and still latched off by _espn_dead on any failure.
+ESPN_NEWS_URL = "https://site.web.api.espn.com/apis/site/v2/sports/baseball/mlb/news"
 TEAM_CODES = {
     "Arizona Diamondbacks": "ARI",
     "Athletics": "ATH",
