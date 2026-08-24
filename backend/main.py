@@ -12,13 +12,18 @@ from pathlib import Path
 from typing import Any, Literal
 
 import pandas as pd
-from fastapi import FastAPI, Query, Request
+from fastapi import Depends, FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
 
+from backend import auth as auth_lib
+from backend.auth_routes import router as auth_router
+from backend.oauth import is_configured as google_oauth_configured
+from backend.auth_store import ensure_auth_schema
+from backend.errors import MoneylineError
 from backend.feeds import (
     EASTERN,
     FeedUnavailable,
@@ -91,14 +96,6 @@ EQUITY_CAVEAT = (
     "Game-level lines also price pitchers, injuries, and lineups this "
     "season-aggregate model cannot see."
 )
-class MoneylineError(Exception):
-    def __init__(self, code: str, message: str, status_code: int) -> None:
-        self.code = code
-        self.message = message
-        self.status_code = status_code
-        super().__init__(message)
-
-
 class TeamStats(BaseModel):
     team: str | None = None
     year: int | None = None
@@ -412,6 +409,13 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("schema_migration_skipped — database unavailable at boot")
         app.state.schema_ready = False
+    # Same idempotent CREATE ... IF NOT EXISTS discipline, separate module so
+    # the account tables can never share a transaction with the pick ledger.
+    try:
+        app.state.auth_schema_ready = await ensure_auth_schema()
+    except Exception:
+        logger.warning("auth_schema_migration_skipped — database unavailable at boot")
+        app.state.auth_schema_ready = False
     app.state.startup_ms = round((time.perf_counter() - started) * 1000)
     app.state.grade_task = asyncio.create_task(grade_scheduler())
     yield
@@ -431,17 +435,24 @@ app = FastAPI(
     docs_url="/api/docs" if os.getenv("NODE_ENV") != "production" else None,
     redoc_url=None,
     lifespan=lifespan,
+    # The auth gate is attached once, to the app, rather than per route. Every
+    # /api route below it is protected the moment it is written -- there is no
+    # decorator to forget on the next endpoint. The allow-list of bootstrap
+    # paths lives in backend.auth.PUBLIC_API_PATHS.
+    dependencies=[Depends(auth_lib.enforce_session)],
 )
+# Credentialed CORS demands concrete origins -- a wildcard is rejected by
+# browsers and would be unsafe regardless. This list is the explicitly
+# configured development origins only; production is same-origin and never
+# needs an entry here.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        os.getenv("DEV_ORIGIN", "http://localhost:18612"),
-        "http://127.0.0.1:18612",
-    ],
-    allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_origins=auth_lib.dev_cors_origins(),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["Content-Type"],
 )
+app.include_router(auth_router)
 
 
 @app.exception_handler(MoneylineError)
@@ -496,6 +507,8 @@ async def health(request: Request) -> dict[str, Any]:
         "startup_ms": getattr(request.app.state, "startup_ms", None),
         "database_ready": await asyncio.to_thread(database_available),
         "model_version": MODEL_VERSION,
+        "auth_schema_ready": bool(getattr(request.app.state, "auth_schema_ready", False)),
+        "google_oauth_configured": google_oauth_configured(),
     }
 
 

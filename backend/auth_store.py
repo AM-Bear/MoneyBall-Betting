@@ -55,6 +55,22 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _run(func, *args):
+    """Run a synchronous store call, turning any driver error into unavailable.
+
+    Callers fail closed on `AuthStoreUnavailable`, so a missing table, a dropped
+    connection, or a timeout all land as a 503 rather than an unhandled 500 that
+    would leak SQL detail through the error envelope.
+    """
+    try:
+        return func(*args)
+    except AuthStoreUnavailable:
+        raise
+    except psycopg.Error as error:
+        logger.warning("auth_store_query_failed error=%s", type(error).__name__)
+        raise AuthStoreUnavailable(str(error)) from error
+
+
 AUTH_SCHEMA_STATEMENTS = [
     """
     CREATE TABLE IF NOT EXISTS moneyline_users (
@@ -178,7 +194,7 @@ def ensure_auth_schema_sync() -> bool:
 
 
 async def ensure_auth_schema() -> bool:
-    return await asyncio.to_thread(ensure_auth_schema_sync)
+    return await asyncio.to_thread(_run, ensure_auth_schema_sync)
 
 
 def auth_database_available() -> bool:
@@ -273,21 +289,21 @@ def _touch_login_sync(user_id: int) -> None:
 
 
 async def find_user_by_email(email: str) -> dict[str, Any] | None:
-    return await asyncio.to_thread(_find_user_by_email_sync, email)
+    return await asyncio.to_thread(_run, _find_user_by_email_sync, email)
 
 
 async def create_user(
     email: str, password_hash: str | None, display_name: str | None = None
 ) -> dict[str, Any] | None:
-    return await asyncio.to_thread(_create_user_sync, email, password_hash, display_name)
+    return await asyncio.to_thread(_run, _create_user_sync, email, password_hash, display_name)
 
 
 async def set_password(user_id: int, password_hash: str) -> None:
-    await asyncio.to_thread(_set_password_sync, user_id, password_hash)
+    await asyncio.to_thread(_run, _set_password_sync, user_id, password_hash)
 
 
 async def touch_login(user_id: int) -> None:
-    await asyncio.to_thread(_touch_login_sync, user_id)
+    await asyncio.to_thread(_run, _touch_login_sync, user_id)
 
 
 # --------------------------------------------------------------------------
@@ -403,15 +419,15 @@ async def create_session(
 
 
 async def resolve_session(token: str) -> dict[str, Any] | None:
-    return await asyncio.to_thread(_resolve_session_sync, token)
+    return await asyncio.to_thread(_run, _resolve_session_sync, token)
 
 
 async def revoke_session(token: str) -> bool:
-    return await asyncio.to_thread(_revoke_session_sync, token)
+    return await asyncio.to_thread(_run, _revoke_session_sync, token)
 
 
 async def revoke_user_sessions(user_id: int) -> int:
-    return await asyncio.to_thread(_revoke_user_sessions_sync, user_id)
+    return await asyncio.to_thread(_run, _revoke_user_sessions_sync, user_id)
 
 
 # --------------------------------------------------------------------------
@@ -502,7 +518,7 @@ async def create_reset_token(
 
 
 async def consume_reset_token(token: str) -> dict[str, Any]:
-    return await asyncio.to_thread(_consume_reset_token_sync, token)
+    return await asyncio.to_thread(_run, _consume_reset_token_sync, token)
 
 
 # --------------------------------------------------------------------------
@@ -547,11 +563,11 @@ def _consume_oauth_state_sync(state: str) -> dict[str, Any] | None:
 async def create_oauth_state(
     state: str, ttl: timedelta, redirect_to: str | None = None
 ) -> None:
-    await asyncio.to_thread(_create_oauth_state_sync, state, ttl, redirect_to)
+    await asyncio.to_thread(_run, _create_oauth_state_sync, state, ttl, redirect_to)
 
 
 async def consume_oauth_state(state: str) -> dict[str, Any] | None:
-    return await asyncio.to_thread(_consume_oauth_state_sync, state)
+    return await asyncio.to_thread(_run, _consume_oauth_state_sync, state)
 
 
 # --------------------------------------------------------------------------
@@ -591,11 +607,11 @@ def _link_google_identity_sync(user_id: int, subject: str, email: str | None) ->
 
 
 async def find_user_by_google_subject(subject: str) -> dict[str, Any] | None:
-    return await asyncio.to_thread(_find_user_by_google_subject_sync, subject)
+    return await asyncio.to_thread(_run, _find_user_by_google_subject_sync, subject)
 
 
 async def link_google_identity(user_id: int, subject: str, email: str | None) -> bool:
-    return await asyncio.to_thread(_link_google_identity_sync, user_id, subject, email)
+    return await asyncio.to_thread(_run, _link_google_identity_sync, user_id, subject, email)
 
 
 async def get_user_by_id(user_id: int) -> dict[str, Any] | None:
@@ -608,4 +624,4 @@ async def get_user_by_id(user_id: int) -> dict[str, Any] | None:
                 )
                 return cursor.fetchone()
 
-    return await asyncio.to_thread(_fetch)
+    return await asyncio.to_thread(_run, _fetch)
