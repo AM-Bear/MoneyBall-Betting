@@ -241,6 +241,7 @@ function Shell() {
         modelLoaded={loaded}
         dbReady={dbReady}
         slateMode={slateMode}
+        modelVersion={health.data?.model_version}
         ms={health.data?.startup_ms}
       />
     </div>

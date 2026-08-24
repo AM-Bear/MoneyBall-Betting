@@ -11,6 +11,7 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 from backend.odds import parlay_book_decimal
+from backend.precompute import MODEL_VERSION
 
 # The price a slip is graded at when no book line was recorded. Picks already
 # grade at a standard -110 (record_store.py grade_pick); this is the parlay
@@ -35,12 +36,63 @@ def database_available() -> bool:
         return False
 
 def ensure_schema() -> bool:
-    """Idempotent v2 boot migration: existing record rows are untouched.
+    """Idempotent boot migration: existing record rows are untouched.
 
-    Adds dual-price (ADJ) grading columns + probables to the picks table and
-    creates the parlay-slips table. Safe to run on every boot.
+    Creates any missing table or index, adds the dual-price (ADJ) grading
+    columns and probables to the picks table, creates the parlay-slips table,
+    and stamps all three with model_version. Every statement is CREATE/ADD
+    ... IF NOT EXISTS: there is no UPDATE, no DROP and no backfill anywhere in
+    here, so a graded row can never be rewritten by a boot. Safe to run on
+    every boot, and the single authority for this schema.
     """
     statements = [
+        # The two v1 tables predate this repo and were created externally, so
+        # in production these CREATEs are no-ops. They are here because
+        # scripts/post-merge.sh no longer runs `drizzle-kit push`: removing the
+        # push removed the only thing that could bootstrap a fresh database.
+        # This migration is now the schema's sole authority, so it has to be
+        # able to stand one up. IF NOT EXISTS throughout -- an existing table
+        # is left exactly as it is, columns and rows untouched.
+        """
+        CREATE TABLE IF NOT EXISTS moneyline_slate_snapshots (
+          id serial PRIMARY KEY,
+          snapshot_date date NOT NULL,
+          mode text NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now()
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS moneyline_snapshot_date_idx
+          ON moneyline_slate_snapshots (snapshot_date)
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS moneyline_record_picks (
+          id serial PRIMARY KEY,
+          snapshot_id integer NOT NULL
+            REFERENCES moneyline_slate_snapshots(id) ON DELETE RESTRICT,
+          game_pk text NOT NULL,
+          game_date date NOT NULL,
+          away_team text NOT NULL,
+          home_team text NOT NULL,
+          pick_team text NOT NULL,
+          model_probability double precision NOT NULL,
+          fair_line integer NOT NULL,
+          entered_line integer,
+          final_away integer,
+          final_home integer,
+          result text,
+          units_pnl double precision,
+          graded_at timestamptz
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS moneyline_record_game_idx
+          ON moneyline_record_picks (game_pk)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS moneyline_record_grade_idx
+          ON moneyline_record_picks (game_date, result)
+        """,
         """
         ALTER TABLE moneyline_record_picks
           ADD COLUMN IF NOT EXISTS probables jsonb,
@@ -64,6 +116,22 @@ def ensure_schema() -> bool:
           created_at timestamptz NOT NULL DEFAULT now()
         )
         """,
+        # Stamp every ledger table with the model identity that produced the
+        # row. Nullable on purpose: rows written before versioning stay NULL
+        # rather than being backfilled with a version that was never checked
+        # against them. get_record reports the distinct set it actually finds.
+        """
+        ALTER TABLE moneyline_slate_snapshots
+          ADD COLUMN IF NOT EXISTS model_version text
+        """,
+        """
+        ALTER TABLE moneyline_record_picks
+          ADD COLUMN IF NOT EXISTS model_version text
+        """,
+        """
+        ALTER TABLE moneyline_parlay_slips
+          ADD COLUMN IF NOT EXISTS model_version text
+        """,
     ]
     with _connection() as connection:
         with connection.cursor() as cursor:
@@ -83,12 +151,14 @@ def store_slate_snapshot(slate: dict[str, Any]) -> bool:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO moneyline_slate_snapshots (snapshot_date, mode)
-                VALUES (%s, %s)
+                INSERT INTO moneyline_slate_snapshots (
+                  snapshot_date, mode, model_version
+                )
+                VALUES (%s, %s, %s)
                 ON CONFLICT (snapshot_date) DO NOTHING
                 RETURNING id
                 """,
-                (slate["date"], slate["mode"]),
+                (slate["date"], slate["mode"], MODEL_VERSION),
             )
             inserted = cursor.fetchone()
             if inserted is None:
@@ -135,9 +205,10 @@ def store_slate_snapshot(slate: dict[str, Any]) -> bool:
                     INSERT INTO moneyline_record_picks (
                       snapshot_id, game_pk, game_date, away_team, home_team,
                       pick_team, model_probability, fair_line,
-                      probables, adj_probability, adj_pick_team, adj_fair_line
+                      probables, adj_probability, adj_pick_team, adj_fair_line,
+                      model_version
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (game_pk) DO NOTHING
                     """,
                     (
@@ -155,6 +226,7 @@ def store_slate_snapshot(slate: dict[str, Any]) -> bool:
                         adj_probability,
                         adj_pick_team,
                         adj_fair_line,
+                        MODEL_VERSION,
                     ),
                 )
         connection.commit()
@@ -260,7 +332,7 @@ def get_record() -> dict[str, Any]:
                        p.entered_line, p.final_away, p.final_home, p.result,
                        p.units_pnl, p.probables, p.adj_probability,
                        p.adj_pick_team, p.adj_fair_line, p.adj_result,
-                       p.adj_units_pnl, s.created_at
+                       p.adj_units_pnl, p.model_version, s.created_at
                 FROM moneyline_record_picks p
                 JOIN moneyline_slate_snapshots s ON s.id = p.snapshot_id
                 ORDER BY p.game_date, p.id
@@ -332,6 +404,16 @@ def get_record() -> dict[str, Any]:
         ),
     }
 
+    # Which model priced this record. Rows written before versioning carry
+    # NULL and are counted, not relabelled: stamping them "v1" would assert
+    # something never checked against them. A record spanning a bump shows
+    # more than one version here, which is the point -- it is the reader's
+    # signal that the rows are not all comparable.
+    versions_present = sorted(
+        {row["model_version"] for row in rows if row["model_version"]}
+    )
+    unversioned = sum(row["model_version"] is None for row in rows)
+
     return {
         "picks": len(rows),
         "graded": graded,
@@ -347,6 +429,8 @@ def get_record() -> dict[str, Any]:
         "entries": serialized,
         "adj_record": adj_record,
         "parlay_record": parlay_record(),
+        "model_versions_present": versions_present,
+        "unversioned_picks": unversioned,
     }
 
 def store_parlay_slip(
@@ -362,13 +446,21 @@ def store_parlay_slip(
             cursor.execute(
                 """
                 INSERT INTO moneyline_parlay_slips (
-                  slip_date, legs, combined_probability, fair_line, book_line
+                  slip_date, legs, combined_probability, fair_line, book_line,
+                  model_version
                 )
-                VALUES (%s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT (slip_date) DO NOTHING
                 RETURNING id
                 """,
-                (slip_date, Jsonb(legs), combined_probability, fair_line, book_line),
+                (
+                    slip_date,
+                    Jsonb(legs),
+                    combined_probability,
+                    fair_line,
+                    book_line,
+                    MODEL_VERSION,
+                ),
             )
             inserted = cursor.fetchone()
             if inserted is None:
@@ -442,7 +534,7 @@ def parlay_record() -> dict[str, Any]:
             cursor.execute(
                 """
                 SELECT id, slip_date, legs, combined_probability, fair_line,
-                       book_line, result, units_pnl, created_at
+                       book_line, result, units_pnl, model_version, created_at
                 FROM moneyline_parlay_slips
                 ORDER BY slip_date, id
                 """
@@ -451,6 +543,31 @@ def parlay_record() -> dict[str, Any]:
     wins = sum(row["result"] == "WIN" for row in rows)
     losses = sum(row["result"] == "LOSS" for row in rows)
     units = sum(float(row["units_pnl"] or 0.0) for row in rows)
+
+    # Era reporting, mirroring get_record. The parlay table is the one whose
+    # grading basis actually changed -- slips used to fall back to the slip's
+    # own fair_line and now fall back to compounded -110 legs, symmetric with
+    # picks -- so it is the one that most needs to say what it is made of.
+    #
+    # Composition is reported, not corrected. Regrading the old rows would
+    # move the published record in the desk's own favour (the retired basis
+    # was pessimistic: grading at your own fair line is zero-EV by
+    # construction), and replit.md forbids rewriting rows that predate the
+    # repo. A correction declined in your own favour is the stronger claim.
+    #
+    # No cutover timestamp is asserted. The fix shipped in a commit whose
+    # deploy time is not recorded anywhere, and inventing a boundary date to
+    # partition the rows would be exactly the fabricated precision the desk
+    # refuses elsewhere. What is reported is what is actually known: how many
+    # graded slips carry no recorded book price, and how many carry no model
+    # stamp.
+    versions_present = sorted(
+        {row["model_version"] for row in rows if row["model_version"]}
+    )
+    fallback_graded = sum(
+        row["book_line"] is None and row["result"] in ("WIN", "LOSS")
+        for row in rows
+    )
     return {
         "slips": len(rows),
         "graded": wins + losses,
@@ -459,6 +576,13 @@ def parlay_record() -> dict[str, Any]:
         "voided": sum(row["result"] == "VOID" for row in rows),
         "units_pnl": round(units, 3),
         "line": f"PARLAYS {wins}–{losses}, {'+' if units >= 0 else ''}{units:.1f}u",
+        "model_versions_present": versions_present,
+        "unversioned_slips": sum(row["model_version"] is None for row in rows),
+        "fallback_graded": fallback_graded,
+        "fallback_basis": (
+            "Slips with no recorded book price grade at the same −110 legs "
+            "compounded that picks fall back to."
+        ),
         "entries": [
             {
                 **row,

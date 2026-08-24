@@ -14,6 +14,15 @@ from sklearn.metrics import accuracy_score, mean_absolute_error, r2_score
 import model_setup
 
 
+# The identity of the fitted model chain. One constant, one place: the API
+# reports it, the ledger stamps it on every row it writes, and the footer reads
+# it back from the API rather than restating it. Bump this whenever a change
+# would make a new price incomparable to an old one -- a refit, a changed
+# training split, or a new term in the chain (home-field advantage is the next
+# one queued). Rows already in the ledger keep the version that priced them, so
+# a record spanning a bump can still be read honestly.
+MODEL_VERSION = "chronological-1962-2001-v1"
+
 ROOT = Path(__file__).resolve().parent
 STATIC_DATA = ROOT / "static_data"
 MODELS_PATH = STATIC_DATA / "moneyline_models.joblib"

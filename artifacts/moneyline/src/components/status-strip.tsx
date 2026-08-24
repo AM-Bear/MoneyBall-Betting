@@ -4,18 +4,23 @@ export function StatusStrip({
   modelLoaded,
   dbReady,
   slateMode,
+  modelVersion,
   ms
 }: {
   modelLoaded: boolean;
   dbReady: boolean;
   slateMode: "live" | "historical" | "error";
+  modelVersion?: string;
   ms?: number;
 }) {
   return (
     <footer className="border-t border-border bg-card px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-[10px] text-muted-foreground mt-auto sticky bottom-0 z-40">
       <div className="flex flex-wrap gap-4 items-center">
         <div className="flex items-center gap-2">
-          <span>Model: 1962–2001-v1</span>
+          {/* The version is the API's to state, not the footer's. Until
+              /api/health answers, say so rather than showing a stale literal
+              that could outlive the model it names. */}
+          <span>Model: {modelVersion ?? "—"}</span>
         </div>
         
         <div className="flex items-center gap-3">
