@@ -46,3 +46,6 @@ packages = ["glibcLocales", "postgresql"]
 [userenv]
 
 [userenv.shared]
+
+[objectStorage]
+defaultBucketID = "replit-objstore-93c7e335-070b-4fe7-9ac1-6877cb07acfa"
