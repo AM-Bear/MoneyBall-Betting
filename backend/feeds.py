@@ -204,8 +204,24 @@ async def _team_inputs(team_id: int, season: int) -> tuple[dict[str, float], boo
     )
 
 
+_TEAM_CODE_FALLBACKS_SEEN: set[str] = set()
+
+
 def _team_code(name: str) -> str:
-    return TEAM_CODES.get(name, "".join(word[0] for word in name.split()).upper()[:3])
+    code = TEAM_CODES.get(name)
+    if code is not None:
+        return code
+    fallback = "".join(word[0] for word in name.split()).upper()[:3]
+    if name not in _TEAM_CODE_FALLBACKS_SEEN:
+        _TEAM_CODE_FALLBACKS_SEEN.add(name)
+        logger.warning(
+            "team_code_fallback name=%r code=%s — not in TEAM_CODES. "
+            "If this is an MLB club (a rename?), stored and freshly derived codes "
+            "will diverge and every affected pick grades LOSS. Add it to TEAM_CODES.",
+            name,
+            fallback,
+        )
+    return fallback
 
 
 def _game_time_et(value: str) -> str:

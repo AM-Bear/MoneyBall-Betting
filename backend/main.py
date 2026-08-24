@@ -7,7 +7,7 @@ import logging
 import os
 import time
 from contextlib import asynccontextmanager
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
 
 from backend.feeds import (
+    EASTERN,
     FeedUnavailable,
     GameNotFound,
     _team_inputs,
@@ -607,10 +608,22 @@ async def slate(
     request.state.cache_status = data.get("cache", "n/a")
     persisted = False
     if data.get("mode") == "live":
-        try:
-            persisted = await asyncio.to_thread(store_slate_snapshot, data)
-        except Exception:
-            logger.warning("record_snapshot_store_failed date=%s", data.get("date"))
+        # The ledger is append-only and one row per date, so only *today's* live slate
+        # may enter it. Without this guard, ?date= lets any backfilled slate seed the
+        # graded record. Grading is deliberately NOT gated on the date: it only settles
+        # already-pending picks that have a final score.
+        today_et = datetime.now(EASTERN).date().isoformat()
+        if data.get("date") == today_et:
+            try:
+                persisted = await asyncio.to_thread(store_slate_snapshot, data)
+            except Exception:
+                logger.warning("record_snapshot_store_failed date=%s", data.get("date"))
+        else:
+            logger.info(
+                "record_snapshot_skipped_not_today date=%s today=%s",
+                data.get("date"),
+                today_et,
+            )
         request.app.state.slate_grade_task = asyncio.create_task(grade_pending_records())
     data["record_persisted"] = persisted
     return data
