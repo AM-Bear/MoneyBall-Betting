@@ -80,7 +80,7 @@ export function BaParadoxPanel() {
         <div className="text-center font-mono text-[10px] text-success/80">
           THIS IS THE WOULD-BEANE-BUY TEST: a {liveSeason ?? "current-season"} player whose OBP percentile towers over his BA percentile is
           exactly what this regression says the market misprices —{" "}
-          <Link href="/players" className="underline underline-offset-2 hover:text-success">
+          <Link href="/research/players" className="underline underline-offset-2 hover:text-success">
             FIND ONE IN THE PLAYER DESK →
           </Link>
         </div>

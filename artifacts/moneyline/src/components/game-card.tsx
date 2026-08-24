@@ -108,7 +108,7 @@ export function GameCard({
           {!isHistorical && game.probables?.away && (
             <button
               type="button"
-              onClick={() => navigate(`/players?id=${game.probables?.away?.player_id}`)}
+              onClick={() => navigate(`/research/players?id=${game.probables?.away?.player_id}`)}
               className="inline-flex items-center gap-1 text-xs text-muted-foreground underline decoration-border underline-offset-4 hover:text-primary"
               data-testid={`link-starter-away-${cardId}`}
             >
@@ -118,7 +118,7 @@ export function GameCard({
           {!isHistorical && game.probables?.home && (
             <button
               type="button"
-              onClick={() => navigate(`/players?id=${game.probables?.home?.player_id}`)}
+              onClick={() => navigate(`/research/players?id=${game.probables?.home?.player_id}`)}
               className="inline-flex items-center gap-1 text-xs text-muted-foreground underline decoration-border underline-offset-4 hover:text-primary"
               data-testid={`link-starter-home-${cardId}`}
             >

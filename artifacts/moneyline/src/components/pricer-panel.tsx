@@ -190,7 +190,7 @@ export function PricerPanel({
 
           {liveContext ? (
             <Link
-              href="/season"
+              href="/research/season"
               className="border border-border bg-background p-3 text-center font-mono text-[10px] text-muted-foreground hover:border-primary hover:text-primary transition-colors leading-snug"
             >
               {liveContext.season ?? "LIVE"} PLAYOFF ODDS LIVE IN

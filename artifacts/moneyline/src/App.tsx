@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { Route, Switch, Router as WouterRouter, useLocation, useSearchParams } from 'wouter';
+import { Redirect, Route, Switch, Router as WouterRouter, useLocation, useSearch, useSearchParams } from 'wouter';
 
 import { CommandBar, LEGACY_SHORTCUTS } from '@/components/command-bar';
 import { StatusStrip } from '@/components/status-strip';
@@ -51,6 +51,12 @@ function RootExperience() {
   return <TodayTab />;
 }
 
+function ResearchRedirect({ to }: { to: string }) {
+  const search = useSearch();
+
+  return <Redirect to={`${to}${search}`} replace />;
+}
+
 function Shell() {
   const health = useHealth();
   const slate = useSlate();
@@ -92,15 +98,15 @@ function Shell() {
         <Route path="/research"><LazyPage><ResearchHub /></LazyPage></Route>
         <Route path="/track-record"><LazyPage><TrackRecordPage /></LazyPage></Route>
         <Route path="/settings"><LazyPage><SettingsPage /></LazyPage></Route>
-        <Route path="/players"><LazyPane><PlayerDeskTab /></LazyPane></Route>
+        <Route path="/players"><ResearchRedirect to="/research/players" /></Route>
         <Route path="/research/players"><LazyPane><PlayerDeskTab /></LazyPane></Route>
-        <Route path="/h2h"><LazyPane><H2HTab /></LazyPane></Route>
+        <Route path="/h2h"><ResearchRedirect to="/research/matchups" /></Route>
         <Route path="/research/matchups"><LazyPane><H2HTab /></LazyPane></Route>
-        <Route path="/parlay"><LazyPane><ParlayLabTab /></LazyPane></Route>
+        <Route path="/parlay"><ResearchRedirect to="/research/parlay" /></Route>
         <Route path="/research/parlay"><LazyPane><ParlayLabTab /></LazyPane></Route>
-        <Route path="/season"><LazyPane><SeasonDeskTab /></LazyPane></Route>
+        <Route path="/season"><ResearchRedirect to="/research/season" /></Route>
         <Route path="/research/season"><LazyPane><SeasonDeskTab /></LazyPane></Route>
-        <Route path="/wire"><LazyPane><WireTab /></LazyPane></Route>
+        <Route path="/wire"><ResearchRedirect to="/research/wire" /></Route>
         <Route path="/research/wire"><LazyPane><WireTab /></LazyPane></Route>
         <Route>
           <div className="flex-1 flex items-center justify-center font-mono">404 NOT FOUND</div>

@@ -3,10 +3,10 @@ import { Link } from "wouter";
 import { ResearchTag } from "@/components/research-tag";
 
 const destinations = [
-  { href: "/players", label: "Players", description: "Compare hitting and pitching profiles with live-season context.", icon: Users },
-  { href: "/h2h", label: "Matchups", description: "Put two teams or players side by side and inspect the model inputs.", icon: Swords },
-  { href: "/season", label: "Season outlook", description: "Review projected wins, playoff odds, and remaining-schedule context.", icon: BarChart3 },
-  { href: "/wire", label: "Wire", description: "Read injury, roster, and research context without treating it as a price input.", icon: Newspaper },
+  { href: "/research/players", label: "Players", description: "Compare hitting and pitching profiles with live-season context.", icon: Users },
+  { href: "/research/matchups", label: "Matchups", description: "Put two teams or players side by side and inspect the model inputs.", icon: Swords },
+  { href: "/research/season", label: "Season outlook", description: "Review projected wins, playoff odds, and remaining-schedule context.", icon: BarChart3 },
+  { href: "/research/wire", label: "Wire", description: "Read injury, roster, and research context without treating it as a price input.", icon: Newspaper },
 ];
 
 export default function ResearchHub() {

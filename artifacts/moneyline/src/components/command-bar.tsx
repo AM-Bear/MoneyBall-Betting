@@ -9,18 +9,18 @@ export const TABS = [
   { label: "Research", path: "/research" },
   { label: "Track record", path: "/track-record" },
   { label: "Desk", path: "/desk" },
-  { label: "Parlay check", path: "/parlay" },
+  { label: "Parlay check", path: "/research/parlay" },
   { label: "Settings", path: "/settings" },
 ] as const;
 
 /** Original 1–6 Desk shortcuts remain stable during the shell migration. */
 export const LEGACY_SHORTCUTS = [
   { path: "/desk" },
-  { path: "/players" },
-  { path: "/h2h" },
-  { path: "/parlay" },
-  { path: "/season" },
-  { path: "/wire" },
+  { path: "/research/players" },
+  { path: "/research/matchups" },
+  { path: "/research/parlay" },
+  { path: "/research/season" },
+  { path: "/research/wire" },
 ] as const;
 
 function formatUpdatedAt(isoString?: string) {
@@ -128,7 +128,7 @@ function OmniSearch() {
         label: p.name.toUpperCase(),
         sub: `${p.team_name || ""} · ${p.group === "hitting" ? "BAT" : "ARM"}`,
         rank: (p.name.toUpperCase().startsWith(needle) ? 180 : 90) + Math.min(p.volume / 100, 40),
-        go: pick(() => navigate(`/players?id=${p.player_id}`)),
+        go: pick(() => navigate(`/research/players?id=${p.player_id}`)),
       });
     }
 

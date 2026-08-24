@@ -112,7 +112,7 @@ export default function DeskTab() {
         games={slate.data?.games || []}
         mode={slate.data?.mode}
         onSelectGame={handleSelectSlateGame}
-        onSelectProbable={(playerId) => navigate(`/players?id=${playerId}`)}
+        onSelectProbable={(playerId) => navigate(`/research/players?id=${playerId}`)}
       />
 
       <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
