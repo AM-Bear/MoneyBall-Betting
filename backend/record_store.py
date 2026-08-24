@@ -17,6 +17,7 @@ from backend.precompute import MODEL_VERSION
 # grade at a standard -110 (record_store.py grade_pick); this is the parlay
 # analogue -- the same -110 legs, compounded. See STANDARD_LEG_LINE use below.
 STANDARD_LEG_LINE = -110
+MAX_PARLAY_BOOK_LINE = 10000
 
 
 def _connection() -> psycopg.Connection[Any]:
@@ -555,6 +556,16 @@ def store_parlay_slip(
     user_id: str = "test-user",
 ) -> dict[str, Any]:
     """Store a user's slip; one paper slip per user per day."""
+    if book_line is not None and (
+        book_line == 0
+        or abs(book_line) < 100
+        or abs(book_line) > MAX_PARLAY_BOOK_LINE
+    ):
+        raise ValueError(
+            "American parlay lines must be between "
+            f"-{MAX_PARLAY_BOOK_LINE} and -100 or between +100 and "
+            f"+{MAX_PARLAY_BOOK_LINE}."
+        )
     with _connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(

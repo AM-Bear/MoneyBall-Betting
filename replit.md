@@ -10,6 +10,7 @@ A Moneyball-doctrine baseball trading desk: it refits the classic OBP/SLG run re
 - `pnpm --filter @workspace/moneyline run smoke` — builds the production frontend, boots `NODE_ENV=production python -m backend.main`, and checks all six public tab routes for panel text and browser errors
 - The `test` validation workflow runs both `python -m pytest -q` and the frontend smoke gate
 - Required env: `DATABASE_URL` — Postgres for the pick/parlay record store
+- Paper parlay slips are private to their authenticated owner; each user can log one slip per day
 - Debug via `curl http://localhost:80/api/...` (path-routed preview proxy)
 
 ## Stack

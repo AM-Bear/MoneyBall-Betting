@@ -61,6 +61,7 @@ from backend.odds import (
 from backend.players import build_player_card, compare_players, search_players
 from backend.precompute import MODEL_VERSION
 from backend.record_store import (
+    MAX_PARLAY_BOOK_LINE,
     database_available,
     ensure_schema,
     get_record,
@@ -129,7 +130,14 @@ class ParlayLeg(BaseModel):
 
 class ParlayInput(BaseModel):
     legs: list[ParlayLeg] = Field(min_length=2, max_length=6)
-    book_odds: int | None = None
+    # User-entered odds belong only to that user's private paper slip. Keep
+    # them bounded so an absurd American line cannot produce an absurd payout
+    # in downstream calculations.
+    book_odds: int | None = Field(
+        default=None,
+        ge=-MAX_PARLAY_BOOK_LINE,
+        le=MAX_PARLAY_BOOK_LINE,
+    )
 
     @model_validator(mode="after")
     def validate_book_odds(self) -> "ParlayInput":
