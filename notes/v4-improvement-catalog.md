@@ -666,3 +666,355 @@ the friction that kills betting logs, and a dead log means a dead record.
 | 25 | Everything else | — | 1–2 | — | — |
 
 **Item 1 is worth more than items 6–25 combined**, and it is not a model change.
+
+---
+
+# Part III — The Gambler's Surface
+
+Gap 4 from §0.2. A bettor's day is: **check the slate → shop the line → size the bet →
+place it → log it → watch it → review CLV.** MONEYLINE covers step one.
+
+## 3.1 The bet slip and the log
+
+### S1. One-tap bet logging from the card — Lift 5, Effort M, 🎯🎲
+There is no way to record a bet. The pick ledger is populated from *slate snapshots*
+(`store_slate_snapshot`, `record_store.py:238`) — it records what the model liked, not what
+the user backed. Those are different products: the first is a model track record, the second
+is a betting log, and a gambler needs both.
+
+Build: a bet slip that captures side, price, stake, book, and timestamp, writing to a new
+`moneyline_bets` table keyed to `user_id`. Distinct from `moneyline_picks`, which should
+stay exactly as it is — the model's own record must not be contaminated by user behaviour.
+
+⛓ Needs: M1 (`entered_line` persistence) establishes the pattern.
+
+### S2. My record vs the model's record — Lift 4, Effort M, 🎯
+Once S1 exists, the two ledgers can be compared, and the comparison is the most interesting
+screen in the product: *the model went 54% and you went 49%, because you skipped its
+underdogs and doubled its favourites.* Behavioural feedback is what betting logs are for, and
+almost nobody does it well.
+
+### S3. Bankroll management — Lift 5, Effort M, 🎯
+Nothing tracks a bankroll. `bankroll-backtest.tsx` displays a *simulated* historical curve
+from `static_json("backtest.json")` — it is a marketing artifact, not a tool.
+
+Needed: starting bankroll, unit definition, running balance, drawdown, ROI, per-bet stake
+recommendations sized off the current balance rather than off abstract "units".
+
+### S4. Fix the uncapped Kelly — Lift 4, Effort S, 🎯 ⚠️
+`half_kelly_fraction` (`odds.py:49-56`) is **uncapped despite its docstring saying
+otherwise**, flagged in `v3-plan.md`'s price-math danger list.
+
+Under the old doctrine this was a display curiosity. In a product that tells people how much
+money to risk it is a safety defect: an uncapped Kelly on an overestimated edge recommends a
+ruinous stake, and model error at the tails is exactly where edges are overestimated. A
+model that thinks it has a 15% edge on a +400 dog will size like it is certain.
+
+Fix in the display/sizing layer with an explicit cap (1–2% of bankroll is the standard
+practitioner ceiling regardless of what Kelly says), and make the cap visible and
+user-adjustable. Do **not** mutate `odds.py` — `smoke_test` asserts current behaviour.
+Pairs with B4: uncertainty should shrink the stake, and today nothing does.
+
+### S5. Import from the books — Lift 4, Effort L, 🎲🎯
+Manual logging dies within two weeks; every betting-log product learns this. The retention
+answer is import: CSV from books that offer it, or an integration in the style of
+Pikkit/Betstamp. Expensive and partly outside your control, but it is the difference between
+a log people keep and a log people abandon.
+
+## 3.2 Shopping, sizing, and alerts
+
+### S6. "My books" configuration — Lift 4, Effort S, 🎲🎯
+⛓ Needs M5. A user in Ohio has different books than one in Arizona. Line shopping is noise
+unless it is filtered to books they can actually bet. Cheap to build, and it makes every
+market feature meaningfully better.
+
+### S7. Push and email alerts — Lift 5, Effort M, 🎯🎲
+The single largest retention lever in this category, and the reason betting tools live on
+phones. Alert on:
+- **Lineups posted** for a game you're watching (pairs with A8)
+- **Starter scratched** (pairs with A0) — the highest-urgency alert there is
+- **Line moved past your threshold** — "the Rays hit −120, your target"
+- **Model edge exceeded X%** on any game
+- **Steam detected** (pairs with M8)
+- **Your bet graded**
+
+`backend/mailer.py` exists. Push needs a PWA or a real app (S9).
+
+### S8. Slate filters and a real screener — Lift 4, Effort M, 🎯
+`screener.tsx` and `/api/screener` exist but are mounted only in `tabs/desk.tsx`, which
+`v3-plan.md` schedules for retirement — three endpoints lose their only home when it goes.
+
+Rebuild the screener as the primary 🎯 surface: filter by edge threshold, Kelly stake,
+uncertainty band, starters-confirmed, book availability, market type. Sort by EV. This is the
+screen a sharp bettor lives in, and today's Today page is not it.
+
+### S9. Mobile — Lift 5, Effort L, 🎲🎯
+Betting happens on a phone, at the ballpark, in the twenty minutes before first pitch. The
+current app is a dense desktop research terminal — `useIsMobile` exists and is used only by
+an unused `ui/sidebar.tsx` (`v3-plan.md`).
+
+Cheapest real answer: a **PWA** — installable, push-capable, no app store. A native app is
+the better product and drags in App Store gambling-category review (see §6.4), which is a
+real cost, not a formality.
+
+### S10. Live / in-game — Lift 4, Effort XL, 🎲
+The fastest-growing segment of the market and the softest lines. Also a completely different
+engineering problem: sub-second odds, win-probability updated per plate appearance, a state
+model MONEYLINE does not have. `season_sim.py`'s Monte Carlo is a distant starting point.
+
+Deliberately ranked XL and late. Do not attempt before pregame is proven.
+
+## 3.3 Surface debt that now matters more
+
+Carried from `v3-plan.md`, re-prioritized because a betting workflow makes them worse:
+
+- **Keyboard `1`–`6` still binds the old six tabs.** `1` does not reach Today; nothing
+  reaches `/track-record` or `/settings`. In a product used under time pressure before first
+  pitch, broken navigation is a real cost. — Lift 2, Effort S
+- **`/` is dual-purpose and undocumented** (`App.tsx:165` renders Desk if `?team`/`?year`,
+  else Today). — Lift 1, Effort S
+- **`/desk` retirement orphans `ScreenerPanel`, `BaParadoxPanel`, `PricerPanel`,
+  `SlateRail`.** S8 is the answer for the screener; decide the other three. — Lift 2, Effort M
+- **`EQUITY_CAVEAT` (`main.py:87`) is the exact text the "not priced" chips need and renders
+  nowhere.** — Lift 1, Effort S
+- **Route names diverge from the docs** (`/track-record` vs `/record`, `/research/parlay` vs
+  `/parlay`). Settle before Track Record becomes the marketing entry point. — Lift 2, Effort S
+- **Two committed-`dist` test failures** (`tests/test_serve_spa.py`) have been red
+  throughout. A permanently-red suite trains everyone to ignore red. — Lift 3, Effort S
+
+---
+
+# Part IV — Trust as the Competitive Weapon
+
+The one part of the old doctrine worth keeping, and the reason a sharp bettor would choose
+this over a better-funded competitor. This section is about making the record *harder to
+fake*, not softer.
+
+### T1. Grade against the closing line — Lift 5, Effort M, 🎯
+⛓ Needs M3. The strongest honesty claim available to any betting product: not "we went
+54%" but "our picks beat the closing number by 1.8 points on average." Nobody can fake CLV,
+and the market cannot be gamed by cherry-picking which bets to report.
+
+This replaces "we ingest no odds, so we grade at −110" with something strictly stronger, and
+it is the direct upgrade path from the doctrine being scratched.
+
+### T2. Make the ledger tamper-evident — Lift 4, Effort M, 🎯
+Every tout claims a record; the claim is worthless because the record is editable. Publish a
+daily hash of the pick set, chained to the previous day's, so a reader can verify no row was
+added, removed, or altered after the fact. Cheap to implement, and it is a genuine,
+checkable differentiator rather than a marketing adjective.
+
+Pairs with the existing `model_version` stamping: prove *which model* made each call, and
+prove the call predates the result.
+
+### T3. Segment the record honestly — Lift 4, Effort M, 🎯
+ROI and calibration broken out by: edge bucket, favourite vs dog, home vs away, month,
+starters-confirmed, model version, market type. The Track Record page already computes
+Wilson intervals and calibration buckets (`components/record/`) — extend the dimensions.
+
+This will produce unflattering slices. Publishing them anyway is the entire point, and it is
+what separates this from every competitor's cherry-picked "documented" record.
+
+### T4. Say what the sample can and cannot prove — Lift 3, Effort S, 🎯
+Already partly done ("what this proves", v3 Tier 3 item 5). Extend with the number that
+matters: **how many more graded bets before a 2% edge is distinguishable from zero at 95%
+confidence?** (Roughly 2,000–3,000 at MLB moneyline variance.) A product that tells you its
+own record is not yet conclusive is making the most credible statement available to it.
+
+### T5. Third-party verification — Lift 3, Effort M, 🎲🎯
+Pikkit, Betstamp, and similar services verify records independently. Being verified there
+is the market's existing trust primitive; it converts skeptics far more efficiently than any
+in-app claim.
+
+### T6. Publish the model, not just the record — Lift 3, Effort S, 🎯🎲
+The coefficients, the training data, the fit method, the backtest results — all of it. This
+is already the codebase's instinct (`verified_stats.json`, `notes/map-model.md`,
+`notes/mlb_api_transcripts.md`). Formalized into public methodology pages it is both content
+marketing and the thing that makes T1–T4 believable.
+
+Counter-argument worth weighing: publishing an edge erodes it. In practice the edge here
+will be in data freshness and execution, not in a regression anyone could refit — and the
+trust is worth more than the secrecy at this stage.
+
+---
+
+# Part V — Data and Infrastructure
+
+### D1. Historical game database — Lift 5, Effort L
+⛓ Blocks A2, which blocks everything. Retrosheet or Lahman for deep history, MLB Stats API
+for recent. The hard requirement is **point-in-time reconstruction** of team stats as they
+stood on each game date; end-of-season stats leak the future and produce fictional edges.
+
+### D2. Store every price the product ever quotes — Lift 4, Effort S
+Slate snapshots persist once per date (`ON CONFLICT (snapshot_date) DO NOTHING`,
+`record_store.py`). That is one price per game per day. For line-movement analysis (M4) and
+for honest freshness claims, store the full series with timestamps.
+
+Cheap, and the data becomes irreplaceable — a proprietary history of model-vs-market that
+compounds and that no competitor can backfill.
+
+### D3. Odds-feed resilience — Lift 4, Effort M
+⛓ Needs M5. Reuse the deadline/stale-serve pattern from `c565770`
+(`FEED_DEADLINE_SECONDS`, shielded shared task). Critical difference: **a stale odds price
+must fail loudly, not serve quietly.** Stale stats degrade a price; a stale odds line
+produces a confident recommendation to bet a number that no longer exists.
+
+### D4. Observability on price accuracy — Lift 3, Effort M
+No production metric tracks whether prices are any good. Rolling log loss, calibration
+drift, model-vs-market divergence by regime, alerting when any moves. B8 is the model-side
+version; this is the ops-side one.
+
+### D5. Cost controls — Lift 3, Effort S
+⛓ Needs M5 + Lane C. Two new metered dependencies (odds API, LLM API) arrive at once.
+Per-user cost accounting, caching, and rate limits by tier, or the unit economics of the
+$19 plan quietly invert.
+
+### D6. Backfill and reconcile MLB data gaps — Lift 2, Effort M
+`get_transactions` sends no `sportId` (`feeds.py:787`) so MiLB affiliates produce phantom
+team codes; the pulse lexicon double-counts and matches "torn" inside "tornado"
+(`analytics.py:26-35`, `:282-285`). Display-only today; with A0 and C3 these feed prices, and
+then they are correctness bugs. **Fix before A0 ships, not after.**
+
+---
+
+# Part VI — Business
+
+### 6.1 Pricing
+
+Current: Free / Analyst $19 / Pro $49, gated by `has_feature` (`billing.py:20-64`), features
+split `today, desk, track_record` → `+players, matchups, wire` → `+parlay, season`.
+
+Observations:
+
+- **The tiers are split by research surface, not by betting value.** Nothing in the ladder
+  says "this tier makes you money." A gambler's ladder is: free = the daily read; mid = line
+  shopping, alerts, the log; top = the +EV screener, CLV analytics, API, chat.
+- **$49 is under-priced for a working sharp tool and over-priced for a research toy.**
+  OddsJam is $99–$199/mo. If MONEYLINE genuinely produces +EV, $49 is leaving money on the
+  table; if it does not, $19 is too much. **The backtest (A2) is a pricing decision, not just
+  an engineering one.**
+- **`parlay` sits in the top tier.** Parlays are the worst-EV product on the board and are a
+  🎲 feature; putting them behind the most expensive 🎯 tier gets the segmentation backwards.
+- **Annual plans and trials.** `ACTIVE_STATUSES` already includes `trialing`
+  (`billing.py:19`) and nothing uses it. Annual billing is the standard fix for the brutal
+  churn in this category.
+
+### 6.2 The affiliate question — Lift 5, Effort M, ⚠️
+Sportsbook affiliate deals ($50–500 CPA per funded signup) are how essentially every
+profitable product in this space actually makes money. Subscriptions are the visible
+business; affiliate revenue is usually the larger one.
+
+**The conflict is direct and worth naming plainly:** a product paid by books to send them
+users has an incentive to recommend betting more, at whatever book pays best — which is
+precisely opposed to a product whose value proposition is telling you honestly when there is
+no edge. Line shopping (M6) is where it bites hardest: the "best price" ranking is exactly
+the surface an affiliate deal corrupts.
+
+Workable version, if taken: disclose every affiliate relationship in-product, never let
+commercial terms influence the recommendation ranking, and keep the ranking logic auditable.
+Unworkable version: quiet affiliate links inside a "best price" table. That trade is worth
+real money and costs the one asset that makes this product different — go in with eyes open.
+
+### 6.3 Growth
+
+- **The record is the marketing.** T1–T6 are growth features as much as trust features. A
+  public, verifiable, unflattering-when-it-should-be record is a content engine.
+- **SEO**: `seo_strategy.md` lists primary keywords as "Unknown" — that is task one. Real
+  targets exist: "[team] vs [team] prediction", "MLB model picks", "CLV calculator",
+  "no-vig calculator", "MLB betting model". The de-vig calculator (M2) is a genuinely useful
+  free tool that ranks and converts.
+- **Free tools as acquisition**: no-vig converter, Kelly calculator, parlay EV calculator,
+  hold calculator. All are trivial given `odds.py` and all rank.
+- **Distribution**: Discord/Telegram bot for the daily brief; a public daily-brief page;
+  posting the model's calls publicly before games, which is both marketing and the strongest
+  possible form of T2.
+
+### 6.4 Legal and platform reality — ⚠️ **read before repositioning**
+
+Genuine, concrete business risks that arrive with the repositioning, not caveats:
+
+1. **Stripe.** Billing shipped three commits ago (`49ad107`). Stripe restricts
+   gambling-related businesses; sports handicapping and tout services sit in a grey zone that
+   has gotten stricter, and enforcement usually arrives as a frozen account with funds held,
+   not as a warning. **Confirm MONEYLINE's classification with Stripe before marketing
+   copy changes**, and know the alternatives (Paddle as merchant-of-record, or a
+   gambling-tolerant processor). This is the highest-probability way the repositioning
+   actually hurts, and it is cheap to check.
+2. **App Store / Play Store.** Both treat gambling-adjacent apps as a restricted category
+   with extra review, geo-restrictions, and sometimes a licensing requirement. Relevant to
+   S9 — and one more reason a PWA is the cheaper first move.
+3. **State-by-state legality.** Sports betting is legal in ~38 US states with different
+   rules. An information product is not a sportsbook and is broadly fine, but "my books"
+   (S6) and any affiliate arrangement (6.2) are state-dependent, and affiliate programs
+   generally require registration in several states.
+4. **Responsible gambling.** Deposit/loss limits, self-exclusion signposting, and
+   help-resource links are a legal requirement for licensed operators and a practical
+   requirement for affiliates and app stores. Beyond compliance: a bankroll tool (S3) that
+   surfaces drawdown and tilt patterns is a genuinely good feature that also happens to
+   discharge this obligation.
+5. **"Guaranteed"/"lock" language.** Actionable under consumer-protection law in several
+   states. MONEYLINE's instincts here are already correct; the marketing copy needs to stay
+   that way once there is a growth incentive pushing the other direction.
+
+---
+
+# Part VII — Multi-Sport (later, but design for it now)
+
+Out of scope for the current build. Two decisions made now cost nothing and save a rewrite.
+
+**What generalizes:** log5, the moneyline conversions, the ledger, the verdict engine, the
+market layer (M1–M9 are entirely sport-agnostic), bankroll, alerts, CLV, the whole trust
+apparatus. Roughly 70% of this document is not baseball-specific.
+
+**What does not:** OBP/SLG → runs is baseball-only. Every sport needs its own strength model.
+
+**Order, when the time comes:**
+1. **NBA** — many games (1230), stats-rich, high correlation between team ratings and
+   outcomes, soft player-prop markets. Easiest transfer and best model-fit.
+2. **NFL** — biggest handle by far, but 17 games per team is a brutal sample and the market
+   is the sharpest in existence. Highest revenue, hardest problem.
+3. **NCAA** — softest lines anywhere, worst data, huge slates. Genuine edge is findable if
+   the data problem is solved.
+
+**Two cheap decisions to make now:** (1) keep `sport` out of the URL but *in* the data model
+— ledger tables, model registry, and odds records should carry a sport key from the start,
+because retrofitting one into a graded ledger is painful and `record_store.py` already
+carries the scar of externally-created tables. (2) Keep sport-specific modelling behind the
+`strength → log5 → price` interface that already exists, so a second sport is a new strength
+model rather than a new pipeline.
+
+---
+
+# Part VIII — What Not To Do
+
+Anti-features, each of which would make this product worse in a way that is hard to reverse.
+
+1. **Do not ship the +EV screener before the backtest.** A screener on an unvalidated model
+   is a machine for losing other people's money confidently. This is the single most
+   important line in the document.
+2. **Do not synthesise `entered_line = fair_line`.** Persist the typed price (M1) or leave
+   it null. Grading every pick at the model's own number makes the record systematically
+   optimistic — the original reasoning in `v3-plan.md` Tier 1 survives the doctrine change
+   intact.
+3. **Do not claim ADJ (or any challenger) is better before the ledger says so.** The
+   champion–challenger discipline (B3) is the mechanism; using it is the point.
+4. **Do not report hit rate as the headline metric.** It is the number that makes bad
+   probability models look good, which is exactly why every tout leads with it. Log loss,
+   calibration, CLV.
+5. **Do not let the LLM emit a number.** The validator in Lane C is two hours of work and it
+   protects the only asset the product has.
+6. **Do not build a "lock of the day."** MODEL SLIP OF THE DAY was deliberately deleted
+   during Phase 1 (`v3-plan.md`) and should stay deleted. It is the single feature most
+   corrosive to a calibrated product, and the repositioning is not a reason to revive it —
+   it makes it more tempting and no less wrong.
+7. **Do not uncap Kelly in a product that recommends stake sizes.** S4.
+8. **Do not hide the losing slices of the record.** T3 will produce unflattering numbers.
+   Publishing them is the differentiator; suppressing them makes this identical to every
+   competitor.
+9. **Do not take affiliate money that influences the line-shopping ranking.** §6.2. Take the
+   money if you want, but not that way.
+10. **Do not chase live betting before pregame is proven.** S10 is XL, is a different
+    engineering problem, and would consume everything.
+11. **Do not let the tests stay red.** Two `test_serve_spa.py` failures have been red
+    throughout; a permanently-red suite is the same as no suite, and this product is about to
+    start moving money.
