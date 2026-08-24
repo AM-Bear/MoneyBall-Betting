@@ -1,9 +1,11 @@
 """Shared fixtures: run grading tests against an isolated Postgres schema.
 
 The real ledger lives in the ``public`` schema. These fixtures create a
-throwaway schema with identical DDL and point ``backend.record_store`` at it
-via ``search_path``, so tests exercise the real SQL paths (locking, conflict
-handling, grading updates) without ever touching production rows.
+throwaway, per-process schema with identical DDL and point
+``backend.record_store`` at it via ``search_path``, so tests exercise the real
+SQL paths (locking, conflict handling, grading updates) without ever touching
+production rows -- and without colliding with a concurrent run of the same
+suite.
 """
 
 from __future__ import annotations
@@ -18,13 +20,25 @@ from psycopg.rows import dict_row
 
 import backend.record_store as record_store
 
-TEST_SCHEMA = "moneyline_grading_tests"
+# Per-process, not a fixed name. The fixture below DROPs this schema CASCADE
+# at both setup and teardown, so two pytest runs sharing one DATABASE_URL used
+# to demolish each other's tables mid-test: ~22 failures per run, and clean on
+# the very next sequential run. That reads as flaky application code and sent
+# one investigation down the wrong path already. It matters here because this
+# project routinely runs several Claude sessions and subagents at once, each
+# running the suite.
+#
+# The pid suffix makes concurrent runs independent. The DROP-on-setup is kept
+# so a process that died without teardown still starts clean, and pid reuse
+# cannot collide with a live run.
+TEST_SCHEMA = f"moneyline_grading_tests_{os.getpid()}"
 
 DDL = """
 CREATE TABLE moneyline_slate_snapshots (
   id SERIAL PRIMARY KEY,
   snapshot_date DATE NOT NULL,
   mode TEXT NOT NULL,
+  model_version TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE UNIQUE INDEX moneyline_snapshot_date_idx
@@ -53,7 +67,8 @@ CREATE TABLE moneyline_record_picks (
   adj_pick_team TEXT,
   adj_fair_line INTEGER,
   adj_result TEXT,
-  adj_units_pnl DOUBLE PRECISION
+  adj_units_pnl DOUBLE PRECISION,
+  model_version TEXT
 );
 CREATE UNIQUE INDEX moneyline_record_game_idx
   ON moneyline_record_picks (game_pk);
@@ -70,6 +85,7 @@ CREATE TABLE moneyline_parlay_slips (
   result TEXT,
   units_pnl DOUBLE PRECISION,
   graded_at TIMESTAMPTZ,
+  model_version TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 """
