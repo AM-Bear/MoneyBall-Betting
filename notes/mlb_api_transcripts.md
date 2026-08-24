@@ -184,3 +184,48 @@ splits returned: 710 totalSplits: 710
 $ curl -s "https://statsapi.mlb.com/api/v1/stats?stats=season&group=pitching&season=2026&sportId=1&playerPool=all&limit=2000&offset=0"
 splits returned: 812 totalSplits: 812
 ```
+
+---
+
+# Re-verification — 2026-08-24 (wire headline sources)
+
+`get_news()` had never executed successfully: it referenced `RSS_URL`,
+`ESPN_NEWS_URL` and `_espn_dead`, none of which were defined, so every call
+raised `NameError` and `wire.py`'s `safe()` wrapper swallowed it. Both source
+URLs below were re-curled today before being wired in.
+
+## 8b. MLB.com RSS news headlines — UNCHANGED, still live
+```
+$ curl -s -o /dev/null -w "HTTP %{http_code} %{content_type}\n" "https://www.mlb.com/feeds/news/rss.xml"
+HTTP 200 text/xml; charset=utf-8
+items: 25  lastBuildDate: Mon, 24 Aug 2026 04:01:13 GMT
+title: Little Leaguers begged for a HR from Harris, and he delivered at the perfect time
+link: https://www.mlb.com/news/mauricio-dubon-michael-harris-ii-braves-win-2026-little-league-classic
+pubDate: Mon, 24 Aug 2026 03:43:00 GMT
+```
+End-to-end through the app after the fix: `await get_news()` → 25 items, all
+`source: MLB.COM`, `date` converted to ET (`2026-08-23T23:43:00-04:00`).
+
+## 9b. ESPN public JSON — 200 to bare curl, 403 to this app's User-Agent
+§9 recorded `HTTP 200` on 2026-08-20 from a bare `curl`. That result does not
+reproduce from inside the app, because `_get_client()` sets
+`User-Agent: MONEYLINE/1.0 (statistical research terminal)` and ESPN rejects it:
+```
+$ python - <<'EOF'   # same URL, three header sets
+app client headers (UA + Accept: application/json) -> 403  (436 bytes)
+User-Agent only                                    -> 403  (436 bytes)
+no custom headers (httpx default UA)               -> 200  (34207 bytes)
+EOF
+```
+So the optional source latches off on the first call of every process. That is
+the spec'd behaviour working correctly — ESPN "must never be a dependency", and
+the wire carries 25 MLB.com headlines without it — but the cause is our own
+User-Agent, not an ESPN outage. Deliberately NOT changed here: `USER_AGENT` is
+shared with every `statsapi.mlb.com` request, and adding ESPN headlines would
+change the merged wire and every team's media-pulse score. Left for a scoped
+decision.
+
+The article shape §9 assumed is still correct, confirmed against today's bare
+curl: `articles[].headline`, `.published`, `.dataSourceIdentifier`,
+`.links.web.href` — so `get_news()` needs no parsing change if that call is
+ever unblocked.

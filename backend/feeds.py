@@ -31,6 +31,11 @@ logger = logging.getLogger("moneyline")
 MLB_BASE_URL = "https://statsapi.mlb.com"
 EASTERN = ZoneInfo("America/New_York")
 USER_AGENT = "MONEYLINE/1.0 (statistical research terminal)"
+# Merged-wire headline sources. MLB.com RSS is the required feed; ESPN is the
+# optional second source the spec allows and must never be a dependency.
+# Dated curl transcripts for both live in notes/mlb_api_transcripts.md §8, §9.
+RSS_URL = "https://www.mlb.com/feeds/news/rss.xml"
+ESPN_NEWS_URL = "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/news"
 TEAM_CODES = {
     "Arizona Diamondbacks": "ARI",
     "Athletics": "ATH",
@@ -171,6 +176,10 @@ cache = AsyncTTLCache(int(os.getenv("CACHE_TTL_SECONDS", "600")))
 pool_cache = AsyncTTLCache(int(os.getenv("POOL_CACHE_TTL_SECONDS", "21600")))
 wire_source_cache = AsyncTTLCache(int(os.getenv("WIRE_CACHE_TTL_SECONDS", "1800")))
 _client: httpx.AsyncClient | None = None
+# One-shot latch for the optional ESPN source: it is tried once per process and,
+# once it fails, skipped for the rest of that process's life. Keyless, optional,
+# and silent — MLB.com RSS is the only headline source the wire depends on.
+_espn_dead = False
 
 
 def _get_client() -> httpx.AsyncClient:
@@ -605,7 +614,9 @@ async def get_news() -> list[dict[str, Any]]:
                     )
             except Exception:
                 # Optional source: skip silently per spec, never a dependency.
+                # Latched off for this process; MLB.com RSS carries the wire.
                 _espn_dead = True
+                logger.debug("espn_news_unavailable — optional source latched off")
         return items
 
     value, _ = await wire_source_cache.get_or_set("news", loader)
