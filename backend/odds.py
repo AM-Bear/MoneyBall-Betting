@@ -39,6 +39,61 @@ def market_vig(line_a: int | float, line_b: int | float) -> float:
     )
 
 
+def no_vig_probabilities(
+    line_a: int | float, line_b: int | float
+) -> tuple[float, float]:
+    """Strip a two-sided market's overround, returning both true probabilities.
+
+    A book's two posted prices imply probabilities that sum to more than 1; the
+    excess is its margin, and `market_vig` reports it. Normalising each side by
+    that sum recovers what the book actually thinks, which is the only market
+    number a model edge should be measured against.
+
+    This answers a different question than `edge_probability`, and the two are
+    not interchangeable:
+
+    - "Is this bet +EV at this price?" -> `edge_probability`, against the raw
+      implied probability. Break-even is break-even; you must beat the price the
+      book is actually charging, vig included, to make money.
+    - "Does the model disagree with the market?" -> this function. Model quality,
+      CLV, and calibration are all measured against what the book thinks, not
+      against what it charges.
+
+    Using the raw implied probability for the second question understates the
+    disagreement on *both* sides, because stripping the margin lowers both
+    implied probabilities. It understates it more on the favourite, which
+    absorbs more of the overround in absolute terms.
+
+    Method is proportional (multiplicative) de-vigging: the standard choice, and
+    the only one derivable from the two prices alone. It distributes the margin
+    in proportion to each side's implied probability, which slightly favours the
+    favourite relative to Shin or power methods. Those need a parameter this
+    function is not given, so the simpler method is the honest one here.
+
+    An arbitrage — a sum below 1 — is a real market state, not an error, and
+    normalises the same way.
+    """
+    implied_a = moneyline_to_probability(line_a)
+    implied_b = moneyline_to_probability(line_b)
+    total = implied_a + implied_b
+    if total <= 0:
+        raise ValueError("A two-sided market must imply a positive probability.")
+    return implied_a / total, implied_b / total
+
+
+def no_vig_edge(
+    model_probability: float, line: int | float, opposite_line: int | float
+) -> float:
+    """Return model probability minus the de-vigged market probability.
+
+    The two-sided analogue of `edge_probability`. `line` is the side being
+    priced; `opposite_line` is the other side of the same market, needed only to
+    strip the margin.
+    """
+    fair_probability, _ = no_vig_probabilities(line, opposite_line)
+    return model_probability - fair_probability
+
+
 def decimal_odds(line: int | float) -> float:
     """Return decimal odds (including stake) for an American moneyline."""
     if line == 0:
