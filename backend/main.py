@@ -111,6 +111,10 @@ class PriceInput(BaseModel):
     slg: float = Field(gt=0, lt=1)
     oobp: float | None = Field(default=None, gt=0, lt=1)
     oslg: float | None = Field(default=None, gt=0, lt=1)
+    # Declares which season the inputs describe so the playoff probability can
+    # state its panel. Undeclared stays flagged — the desk does not vouch for
+    # calibration it cannot check.
+    season: int | None = None
 
 class ParlayLeg(BaseModel):
     gamePk: str
@@ -495,6 +499,7 @@ async def price_inputs(payload: PriceInput) -> dict[str, Any]:
         payload.slg,
         payload.oobp,
         payload.oslg,
+        season=payload.season,
     )
     prediction["data_ranges"] = {
         field.lower(): {
@@ -513,12 +518,14 @@ async def matchup(payload: MatchupInput) -> dict[str, Any]:
         payload.team_a.slg,
         payload.team_a.oobp,
         payload.team_a.oslg,
+        season=payload.team_a.year,
     )
     team_b = predict_from_inputs(
         payload.team_b.obp,
         payload.team_b.slg,
         payload.team_b.oobp,
         payload.team_b.oslg,
+        season=payload.team_b.year,
     )
     strength_a = pythagorean_strength(
         team_a["predicted"]["rs"], team_a["predicted"]["ra"]

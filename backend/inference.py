@@ -31,13 +31,50 @@ def _number(value: float, digits: int = 1) -> float:
     return round(float(value), digits)
 
 
+def _playoff_prob_basis(season: int | None) -> dict[str, Any]:
+    """Disclose the panel the playoff logistic was fit and tested on.
+
+    The logistic is fit on train ≤ 2001 and tested against the bundled panel,
+    so a probability for any other season is a historical-panel reference, not
+    a calibrated number. The desk never suppresses the figure and never
+    recalibrates it silently — it ships the panel alongside it. Bounds come
+    from the bundle, never a literal.
+    """
+    data = load_data()
+    panel = f"{int(data['Year'].min())}–{int(data['Year'].max())}"
+    in_panel = season is not None and (
+        int(data["Year"].min()) <= season <= int(data["Year"].max())
+    )
+    return {
+        "panel": panel,
+        "season": season,
+        "in_panel": in_panel,
+        "status": "IN PANEL" if in_panel else "HISTORICAL PANEL ONLY",
+        "note": (
+            f"Playoff odds are fit and tested on the {panel} panel."
+            if in_panel
+            else (
+                f"The playoff model was fit and tested on the {panel} panel. "
+                "These inputs are not declared inside it, so this figure is a "
+                "historical-panel reference, not a calibrated probability."
+            )
+        ),
+    }
+
+
 def predict_from_inputs(
     obp: float,
     slg: float,
     oobp: float | None = None,
     oslg: float | None = None,
+    season: int | None = None,
 ) -> dict[str, Any]:
-    """Run the Moneyball chain for real or user-adjusted team inputs."""
+    """Run the Moneyball chain for real or user-adjusted team inputs.
+
+    `season` declares which season the inputs describe so the playoff
+    probability can state the panel it came from. Undeclared means unvouched:
+    the figure is marked historical-panel-only rather than presented as fact.
+    """
     models = load_models()
     predicted_rs = float(models["rs"].predict(pd.DataFrame([{"OBP": obp, "SLG": slg}]))[0])
     has_defense = oobp is not None and oslg is not None
@@ -87,6 +124,9 @@ def predict_from_inputs(
             "rd": _number(predicted_rd) if predicted_rd is not None else None,
             "wins": _number(predicted_wins) if predicted_wins is not None else None,
             "playoff_prob": _number(playoff_probability, 4) if playoff_probability is not None else None,
+            "playoff_prob_basis": (
+                _playoff_prob_basis(season) if playoff_probability is not None else None
+            ),
         },
         "fair_line": probability_to_moneyline(generic_strength) if generic_strength is not None else None,
         "offense_only": not has_defense,
@@ -103,7 +143,9 @@ def predict_team(team: str, year: int) -> dict[str, Any]:
     row = selection.iloc[0]
     oobp = None if pd.isna(row["OOBP"]) else float(row["OOBP"])
     oslg = None if pd.isna(row["OSLG"]) else float(row["OSLG"])
-    result = predict_from_inputs(float(row["OBP"]), float(row["SLG"]), oobp, oslg)
+    result = predict_from_inputs(
+        float(row["OBP"]), float(row["SLG"]), oobp, oslg, season=int(row["Year"])
+    )
     result["team"] = str(row["Team"])
     result["year"] = int(row["Year"])
     result["actual"] = {

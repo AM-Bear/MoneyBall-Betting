@@ -77,9 +77,17 @@ would pass.
 - **Doubleheader parlay mispricing.** Same-game refusal keys on `gamePk` only
   (`main.py:1001-1007`). A doubleheader is two gamePks with the same two teams, so
   correlated legs pass the independence check and get multiplied as independent.
-- **Playoff logistic leaks unflagged.** `inference.py:55-59` always computes the 1962–2012
-  logistic; `main.py:490-504` returns it for live 2026 inputs. The UI refuses it
-  (`pricer-panel.tsx:188-205`) but the API ships the miscalibrated number with no flag.
+- **Playoff logistic leaks unflagged.** ✅ FIXED on `tier2-logistic-flag`. Every
+  `predicted` block now carries `playoff_prob_basis` beside `playoff_prob`
+  (`panel`, `season`, `in_panel`, `status`, `note`), built from the bundle's own year
+  bounds. Undeclared season stays flagged — the desk does not vouch for calibration it
+  cannot check. `/api/price` takes an optional `season`; `/api/matchup` passes each
+  side's `year`; `predict_team` declares its own row year. Math verified identical.
+  **Follow-up (not done, deliberately):** `pricer-panel.tsx:188-205` still gates on the
+  client-side `liveContext`, not on the flag. It is *not* redundant — it substitutes the
+  Season Desk simulation, which the flag does not do — but the gate should be re-pointed
+  at `predicted.playoff_prob_basis.in_panel` so the refusal is payload-driven and there is
+  one source of truth. `pricer-panel.tsx` is the only display consumer of `playoff_prob`.
 - Minor: pulse lexicon double-counts ("streak" and "losing streak" both match,
   `analytics.py:26-35`); `_matches` (`:282-285`) has a leading word boundary but no trailing
   one, so "torn" matches "tornado"; `get_transactions` sends no `sportId`
