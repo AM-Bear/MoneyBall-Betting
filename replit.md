@@ -7,6 +7,8 @@ A Moneyball-doctrine baseball trading desk: it refits the classic OBP/SLG run re
 - Workflow `artifacts/api-server: API Server` runs `python -m uvicorn backend.main:app` on `$PORT` (FastAPI, python 3.12 in `.pythonlibs`)
 - Workflow `artifacts/moneyline: web` runs the Vite frontend
 - `python smoke_test.py` — full regression suite (v1 model chain + v2 math); must pass before and after any backend change
+- `pnpm --filter @workspace/moneyline run smoke` — builds the production frontend, boots `NODE_ENV=production python -m backend.main`, and checks all six public tab routes for panel text and browser errors
+- The `test` validation workflow runs both `python -m pytest -q` and the frontend smoke gate
 - Required env: `DATABASE_URL` — Postgres for the pick/parlay record store
 - Debug via `curl http://localhost:80/api/...` (path-routed preview proxy)
 

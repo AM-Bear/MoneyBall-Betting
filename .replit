@@ -30,7 +30,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python -m pytest -q"
+args = "python -m pytest -q && pnpm --filter @workspace/moneyline run smoke"
 
 [workflows.workflow.metadata]
 isValidation = true
@@ -56,7 +56,7 @@ timeoutMs = 20000
 
 [nix]
 channel = "stable-25_05"
-packages = ["glibcLocales", "postgresql"]
+packages = ["glibcLocales", "postgresql", "glib", "nss", "nspr", "atk", "at-spi2-atk", "cups", "libdrm", "dbus", "expat", "libxkbcommon", "pango", "cairo", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "xorg.libxcb", "xorg.libxshmfence", "mesa", "libgbm", "alsa-lib"]
 
 [userenv]
 
