@@ -192,7 +192,7 @@ export function LiveRecordPanel() {
             <span className="text-[10px] text-muted-foreground uppercase">Paper Parlays</span>
             <span className="font-bold text-primary">{data.parlay_record.line}</span>
             <span className="text-muted-foreground text-[10px]">
-              {data.parlay_record.slips} SLIP{data.parlay_record.slips === 1 ? "" : "S"} LOGGED · GRADED ALL-OR-NOTHING · ONE PUBLIC PAPER SLIP PER DAY
+              {data.parlay_record.slips} PERSONAL SLIP{data.parlay_record.slips === 1 ? "" : "S"} LOGGED · GRADED ALL-OR-NOTHING · ONE PER USER PER DAY
             </span>
             {/* The parlay table is the one whose grading basis changed. This
                 disclosure replaces regrading the rows -- but it may only state

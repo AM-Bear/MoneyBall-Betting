@@ -5,3 +5,4 @@
 - [Live season contract](live-season-contract.md) — the live year comes from /api/teams-live season, never hardcoded in UI copy, params, or route validation.
 - [Deployment startup probe & process split](deployment-startup-probe.md) — prod runs one backend.main (api) + lightweight serve_spa (web); two heavy processes time out the promote probe.
 - [Frontend browser smoke runtime](frontend-browser-smoke-runtime.md) — headless Chromium needs declared Nix libraries and an install step for repeatable fresh-workspace validation.
+- [PostgreSQL partial uniqueness](postgres-partial-uniqueness.md) — ON CONFLICT inference for a partial unique index must repeat the index predicate.

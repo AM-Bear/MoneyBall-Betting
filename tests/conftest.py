@@ -77,7 +77,8 @@ CREATE INDEX moneyline_record_grade_idx
 
 CREATE TABLE moneyline_parlay_slips (
   id SERIAL PRIMARY KEY,
-  slip_date DATE NOT NULL UNIQUE,
+  user_id TEXT,
+  slip_date DATE NOT NULL,
   legs JSONB NOT NULL,
   combined_probability DOUBLE PRECISION NOT NULL,
   fair_line INTEGER NOT NULL,
@@ -88,6 +89,9 @@ CREATE TABLE moneyline_parlay_slips (
   model_version TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+CREATE UNIQUE INDEX moneyline_parlay_user_date_idx
+  ON moneyline_parlay_slips (user_id, slip_date)
+  WHERE user_id IS NOT NULL;
 """
 
 

@@ -105,7 +105,8 @@ def ensure_schema() -> bool:
         """
         CREATE TABLE IF NOT EXISTS moneyline_parlay_slips (
           id serial PRIMARY KEY,
-          slip_date date NOT NULL UNIQUE,
+          user_id text,
+          slip_date date NOT NULL,
           legs jsonb NOT NULL,
           combined_probability double precision NOT NULL,
           fair_line integer NOT NULL,
@@ -115,6 +116,19 @@ def ensure_schema() -> bool:
           graded_at timestamptz,
           created_at timestamptz NOT NULL DEFAULT now()
         )
+        """,
+        """
+        ALTER TABLE moneyline_parlay_slips
+          ADD COLUMN IF NOT EXISTS user_id text
+        """,
+        """
+        ALTER TABLE moneyline_parlay_slips
+          DROP CONSTRAINT IF EXISTS moneyline_parlay_slips_slip_date_key
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS moneyline_parlay_user_date_idx
+          ON moneyline_parlay_slips (user_id, slip_date)
+          WHERE user_id IS NOT NULL
         """,
         # Stamp every ledger table with the model identity that produced the
         # row. Nullable on purpose: rows written before versioning stay NULL
@@ -418,7 +432,7 @@ def void_pick(game_pk: str) -> bool:
     return voided
 
 
-def get_record() -> dict[str, Any]:
+def get_record(user_id: str | None = None) -> dict[str, Any]:
     with _connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -524,7 +538,10 @@ def get_record() -> dict[str, Any]:
         "curve": curve,
         "entries": serialized,
         "adj_record": adj_record,
-        "parlay_record": parlay_record(),
+        # User-authored slips are private and must never become part of the
+        # public desk record. An authenticated reader sees only their own
+        # paper slips; an anonymous reader sees no user-authored slips.
+        "parlay_record": parlay_record(user_id),
         "model_versions_present": versions_present,
         "unversioned_picks": unversioned,
     }
@@ -535,21 +552,23 @@ def store_parlay_slip(
     combined_probability: float,
     fair_line: int,
     book_line: int | None,
+    user_id: str = "test-user",
 ) -> dict[str, Any]:
-    """Store today's slip; one paper slip per day, reopening never duplicates."""
+    """Store a user's slip; one paper slip per user per day."""
     with _connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
                 INSERT INTO moneyline_parlay_slips (
-                  slip_date, legs, combined_probability, fair_line, book_line,
+                  user_id, slip_date, legs, combined_probability, fair_line, book_line,
                   model_version
                 )
-                VALUES (%s, %s, %s, %s, %s, %s)
-                ON CONFLICT (slip_date) DO NOTHING
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, slip_date) WHERE user_id IS NOT NULL DO NOTHING
                 RETURNING id
                 """,
                 (
+                    user_id,
                     slip_date,
                     Jsonb(legs),
                     combined_probability,
@@ -561,8 +580,9 @@ def store_parlay_slip(
             inserted = cursor.fetchone()
             if inserted is None:
                 cursor.execute(
-                    "SELECT id, legs, created_at FROM moneyline_parlay_slips WHERE slip_date = %s",
-                    (slip_date,),
+                    "SELECT id, legs, created_at FROM moneyline_parlay_slips "
+                    "WHERE user_id = %s AND slip_date = %s",
+                    (user_id, slip_date),
                 )
                 existing = cursor.fetchone()
                 connection.commit()
@@ -654,17 +674,32 @@ def _settled_basis(row: dict[str, Any]) -> str | None:
     return "unrecognised"
 
 
-def parlay_record() -> dict[str, Any]:
+def parlay_record(user_id: str | None = "test-user") -> dict[str, Any]:
     with _connection() as connection:
         with connection.cursor() as cursor:
-            cursor.execute(
-                """
+            if user_id is None:
+                # Anonymous/public record views must not publish private slips
+                # or legacy rows written before ownership existed.
+                cursor.execute(
+                    """
+                    SELECT id, slip_date, legs, combined_probability, fair_line,
+                           book_line, result, units_pnl, model_version, created_at
+                    FROM moneyline_parlay_slips
+                    WHERE FALSE
+                    ORDER BY slip_date, id
+                    """
+                )
+            else:
+                cursor.execute(
+                    """
                 SELECT id, slip_date, legs, combined_probability, fair_line,
                        book_line, result, units_pnl, model_version, created_at
                 FROM moneyline_parlay_slips
+                WHERE user_id = %s
                 ORDER BY slip_date, id
-                """
-            )
+                """,
+                    (user_id,),
+                )
             rows = list(cursor.fetchall())
     wins = sum(row["result"] == "WIN" for row in rows)
     losses = sum(row["result"] == "LOSS" for row in rows)

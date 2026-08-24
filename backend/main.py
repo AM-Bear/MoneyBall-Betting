@@ -1066,9 +1066,11 @@ def _empty_record() -> dict[str, Any]:
 
 
 @app.get("/api/record")
-async def live_record() -> dict[str, Any]:
+async def live_record(request: Request) -> dict[str, Any]:
+    user = getattr(request.state, "user", None) or request.scope.get("user")
+    user_id = str(user["id"]) if isinstance(user, dict) and user.get("id") else None
     try:
-        record = await asyncio.to_thread(get_record)
+        record = await asyncio.to_thread(get_record, user_id)
         record["database_ready"] = True
         return record
     except Exception:
@@ -1183,7 +1185,10 @@ async def wire(
     return await get_wire(record, team=team, types=type_list, limit=limit)
 
 @app.post("/api/parlay/log")
-async def parlay_log(payload: ParlayInput) -> dict[str, Any]:
+async def parlay_log(
+    payload: ParlayInput,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
     if not await asyncio.to_thread(database_available):
         raise MoneylineError(
             "record_unavailable",
@@ -1200,6 +1205,7 @@ async def parlay_log(payload: ParlayInput) -> dict[str, Any]:
         priced["combined_prob"],
         priced["fair_odds"],
         payload.book_odds,
+        str(user["id"]),
     )
     return {
         **stored,
@@ -1207,7 +1213,7 @@ async def parlay_log(payload: ParlayInput) -> dict[str, Any]:
         "priced": priced,
         "note": (
             "Paper slip only — graded all-or-nothing when finals arrive. "
-            "One slip per day; reopening never duplicates it."
+            "One personal slip per day; reopening never duplicates it."
         ),
     }
 
