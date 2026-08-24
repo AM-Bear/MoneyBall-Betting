@@ -13,8 +13,22 @@ from pathlib import Path
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import FileResponse, PlainTextResponse, Response
+from starlette.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    Response,
+)
 from starlette.routing import Route
+
+from backend.seo import (
+    SITEMAP_PATH,
+    is_public_client_route,
+    not_found_html,
+    render_index,
+    sitemap_xml,
+)
 
 DIST_DIR = Path(__file__).resolve().parents[1] / "artifacts" / "moneyline" / "dist" / "public"
 
@@ -22,8 +36,21 @@ DIST_DIR = Path(__file__).resolve().parents[1] / "artifacts" / "moneyline" / "di
 IMMUTABLE_PREFIX = "assets/"
 
 
+async def sitemap(_: Request) -> Response:
+    return Response(
+        sitemap_xml(),
+        media_type="application/xml",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
 async def spa(request: Request) -> Response:
     path = request.path_params.get("path", "").lstrip("/")
+    if path == "api" or path.startswith("api/"):
+        return JSONResponse(
+            {"error": {"code": "not_found", "message": "API route not found."}},
+            status_code=404,
+        )
     if path:
         candidate = (DIST_DIR / path).resolve()
         try:
@@ -42,15 +69,25 @@ async def spa(request: Request) -> Response:
         last_segment = path.rsplit("/", 1)[-1]
         if path.startswith(IMMUTABLE_PREFIX) or "." in last_segment:
             return PlainTextResponse("Not found.", status_code=404)
+    if not is_public_client_route(path):
+        return HTMLResponse(not_found_html(), status_code=404)
     index_path = DIST_DIR / "index.html"
     if index_path.exists():
-        return FileResponse(index_path, headers={"Cache-Control": "no-cache"})
+        return HTMLResponse(
+            render_index(index_path.read_text(encoding="utf-8"), path),
+            headers={"Cache-Control": "no-cache"},
+        )
     return PlainTextResponse(
         "The frontend build is not available in this runtime.", status_code=503
     )
 
 
-app = Starlette(routes=[Route("/{path:path}", spa)])
+app = Starlette(
+    routes=[
+        Route(SITEMAP_PATH, sitemap),
+        Route("/{path:path}", spa),
+    ]
+)
 
 
 if __name__ == "__main__":

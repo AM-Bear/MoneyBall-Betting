@@ -1,2 +1,3 @@
 User-agent: *
 Allow: /
+Sitemap: https://money-ball-betting.replit.app/sitemap.xml

@@ -1,0 +1,448 @@
+"""Small, dependency-free SEO responses shared by MONEYLINE servers.
+
+The frontend is intentionally still a client-rendered React app.  These
+responses provide useful HTML to crawlers and link unfurlers before JavaScript
+loads, while the normal React root takes over for interactive use.
+"""
+
+from __future__ import annotations
+
+import html
+import os
+import re
+from dataclasses import dataclass
+from urllib.parse import urljoin
+
+
+SITE_URL = os.getenv("MONEYLINE_SITE_URL", "https://money-ball-betting.replit.app").rstrip(
+    "/"
+)
+SITEMAP_PATH = "/sitemap.xml"
+
+
+@dataclass(frozen=True)
+class RouteSeo:
+    title: str
+    description: str
+    heading: str
+    eyebrow: str
+    intro: str
+    sections: tuple[tuple[str, str], ...]
+    links: tuple[tuple[str, str], ...]
+    canonical_path: str
+    indexable: bool = True
+
+
+COMMON_LINKS = (
+    ("Research hub", "/research"),
+    ("Baseball trading desk", "/desk"),
+    ("Model track record", "/track-record"),
+    ("Player research", "/research/players"),
+    ("Matchup research", "/research/matchups"),
+    ("Parlay research", "/research/parlay"),
+    ("Season research", "/research/season"),
+    ("Baseball wire", "/research/wire"),
+)
+
+
+ROUTE_SEO: dict[str, RouteSeo] = {
+    "/": RouteSeo(
+        title="MONEYLINE — Baseball Research Desk",
+        description=(
+            "Transparent baseball statistical research for team pricing, "
+            "matchup edges, model track records, and paper bankroll analysis."
+        ),
+        heading="Baseball research, priced transparently",
+        eyebrow="MONEYLINE / STATISTICAL RESEARCH DESK",
+        intro=(
+            "Explore model-based baseball research built from verified data, "
+            "disclosed assumptions, and honest refusals instead of fake precision."
+        ),
+        sections=(
+            (
+                "A research desk, not a black box",
+                "MONEYLINE translates historical team performance into readable "
+                "prices and keeps the evidence behind each result visible.",
+            ),
+            (
+                "Start with a public research page",
+                "Review the research hub, inspect the model record, or open a "
+                "focused player, matchup, parlay, season, or wire workspace.",
+            ),
+        ),
+        links=COMMON_LINKS,
+        canonical_path="/",
+    ),
+    "/research": RouteSeo(
+        title="Baseball Research Hub | MONEYLINE",
+        description=(
+            "Browse MONEYLINE baseball research tools for players, matchups, "
+            "parlays, season outlooks, and the latest baseball wire."
+        ),
+        heading="Baseball research hub",
+        eyebrow="MONEYLINE / RESEARCH",
+        intro=(
+            "A starting point for transparent baseball analysis, with each "
+            "workspace focused on a distinct question."
+        ),
+        sections=(
+            (
+                "Research paths",
+                "Compare player profiles, evaluate head-to-head matchups, test "
+                "parlay math, inspect season outlooks, and read baseball news "
+                "and transaction context.",
+            ),
+        ),
+        links=COMMON_LINKS[1:],
+        canonical_path="/research",
+    ),
+    "/track-record": RouteSeo(
+        title="Baseball Model Track Record | MONEYLINE",
+        description=(
+            "Review the MONEYLINE baseball model track record, grading rules, "
+            "historical receipts, and paper-pick performance."
+        ),
+        heading="Baseball model track record",
+        eyebrow="MONEYLINE / TRACK RECORD",
+        intro=(
+            "See how the model's paper picks have performed, with the grading "
+            "rules and limitations shown alongside the record."
+        ),
+        sections=(
+            (
+                "Receipts over hindsight",
+                "The record separates model outputs from later game results so "
+                "performance can be reviewed without rewriting the original pick.",
+            ),
+        ),
+        links=(
+            ("Research hub", "/research"),
+            ("Today's slate", "/"),
+            ("Season research", "/research/season"),
+        ),
+        canonical_path="/track-record",
+    ),
+    "/research/players": RouteSeo(
+        title="Baseball Player Research | MONEYLINE",
+        description=(
+            "Search baseball player profiles, percentile context, and "
+            "Moneyball-style offensive and pitching research in MONEYLINE."
+        ),
+        heading="Baseball player research",
+        eyebrow="MONEYLINE / PLAYERS",
+        intro=(
+            "Search the live player pool and inspect the context behind a "
+            "player's statistical profile."
+        ),
+        sections=(
+            (
+                "Player context",
+                "Profiles use transparent statistical comparisons and disclose "
+                "when a requested player or comparison is outside the supported "
+                "research pool.",
+            ),
+        ),
+        links=(
+            ("Research hub", "/research"),
+            ("Matchup research", "/research/matchups"),
+            ("Season research", "/research/season"),
+        ),
+        canonical_path="/research/players",
+    ),
+    "/research/matchups": RouteSeo(
+        title="Baseball Matchup Research | MONEYLINE",
+        description=(
+            "Evaluate baseball team and player matchups with transparent "
+            "MONEYLINE comparisons, inputs, and model context."
+        ),
+        heading="Baseball matchup research",
+        eyebrow="MONEYLINE / MATCHUPS",
+        intro=(
+            "Compare teams or players side by side and see the inputs that "
+            "shape the matchup context."
+        ),
+        sections=(
+            (
+                "Compare the evidence",
+                "Matchup views surface historical team inputs and player "
+                "context without pretending that context alone changes a fair "
+                "price.",
+            ),
+        ),
+        links=(
+            ("Research hub", "/research"),
+            ("Player research", "/research/players"),
+            ("Today's slate", "/"),
+        ),
+        canonical_path="/research/matchups",
+    ),
+    "/research/parlay": RouteSeo(
+        title="Baseball Parlay Research | MONEYLINE",
+        description=(
+            "Explore baseball parlay probability, expected value, vig, and "
+            "half-Kelly paper-staking math with MONEYLINE."
+        ),
+        heading="Baseball parlay research",
+        eyebrow="MONEYLINE / PARLAY LAB",
+        intro=(
+            "Build a paper parlay and inspect the probability, expected value, "
+            "vig comparison, and staking math instead of chasing a headline."
+        ),
+        sections=(
+            (
+                "Math before marketing",
+                "The parlay lab distinguishes model probability from a supplied "
+                "book line and refuses to show an edge until the required price "
+                "inputs are valid.",
+            ),
+        ),
+        links=(
+            ("Research hub", "/research"),
+            ("Today's slate", "/"),
+            ("Model track record", "/track-record"),
+        ),
+        canonical_path="/research/parlay",
+    ),
+    "/research/season": RouteSeo(
+        title="MLB Season Research | MONEYLINE",
+        description=(
+            "Review MLB season outlooks, team context, and transparent "
+            "MONEYLINE projections for the current baseball season."
+        ),
+        heading="MLB season research",
+        eyebrow="MONEYLINE / SEASON DESK",
+        intro=(
+            "Review current-season team outlooks and the assumptions behind "
+            "the remaining-schedule research."
+        ),
+        sections=(
+            (
+                "Outlooks with disclosed limits",
+                "Season views use the current live season and show when inputs "
+                "are unavailable rather than filling gaps with invented numbers.",
+            ),
+        ),
+        links=(
+            ("Research hub", "/research"),
+            ("Today's slate", "/"),
+            ("Baseball wire", "/research/wire"),
+        ),
+        canonical_path="/research/season",
+    ),
+    "/research/wire": RouteSeo(
+        title="MLB Baseball Wire | MONEYLINE",
+        description=(
+            "Read a focused MLB baseball wire combining transactions, news, "
+            "and disclosed team context in the MONEYLINE research desk."
+        ),
+        heading="MLB baseball wire",
+        eyebrow="MONEYLINE / WIRE",
+        intro=(
+            "Follow transactions, baseball news, and team context from a "
+            "research-first view of the current MLB environment."
+        ),
+        sections=(
+            (
+                "Context, not hidden price inputs",
+                "Wire notes and media pulse help explain what is happening "
+                "around a team; they are disclosed context and do not silently "
+                "move the model's price.",
+            ),
+        ),
+        links=(
+            ("Research hub", "/research"),
+            ("Season research", "/research/season"),
+            ("Today's slate", "/"),
+        ),
+        canonical_path="/research/wire",
+    ),
+    "/desk": RouteSeo(
+        title="Baseball Trading Desk | MONEYLINE",
+        description=(
+            "Open the MONEYLINE baseball trading desk for model prices, "
+            "team inputs, and transparent game research."
+        ),
+        heading="Baseball trading desk",
+        eyebrow="MONEYLINE / DESK",
+        intro=(
+            "Review model pricing and the data receipts behind a baseball "
+            "team's current research profile."
+        ),
+        sections=(
+            (
+                "Model inputs in view",
+                "The desk keeps the model's assumptions and evidence close to "
+                "the price so a result can be inspected rather than accepted "
+                "on trust.",
+            ),
+        ),
+        links=(
+            ("Research hub", "/research"),
+            ("Today's slate", "/"),
+            ("Model track record", "/track-record"),
+        ),
+        canonical_path="/desk",
+    ),
+    "/settings": RouteSeo(
+        title="MONEYLINE Settings",
+        description="Configure the MONEYLINE presentation preferences.",
+        heading="MONEYLINE settings",
+        eyebrow="MONEYLINE / SETTINGS",
+        intro="Presentation controls for the MONEYLINE research desk.",
+        sections=(),
+        links=(("Return to research", "/research"),),
+        canonical_path="/settings",
+        indexable=False,
+    ),
+}
+
+# These are the only clean paths the client router intentionally owns.  The
+# short paths remain supported for existing links but are not canonical.
+PUBLIC_CLIENT_ROUTE_PATHS = frozenset(
+    {
+        *ROUTE_SEO,
+        "/players",
+        "/h2h",
+        "/parlay",
+        "/season",
+        "/wire",
+    }
+)
+
+CANONICAL_PUBLIC_RESEARCH_PATHS = (
+    "/",
+    "/desk",
+    "/research",
+    "/track-record",
+    "/research/players",
+    "/research/matchups",
+    "/research/parlay",
+    "/research/season",
+    "/research/wire",
+)
+
+ALIASED_CANONICAL_PATHS = {
+    "/players": "/research/players",
+    "/h2h": "/research/matchups",
+    "/parlay": "/research/parlay",
+    "/season": "/research/season",
+    "/wire": "/research/wire",
+}
+
+
+def normalize_route_path(path: str) -> str:
+    """Normalize clean client paths without accepting arbitrary URL shapes."""
+    if not path or path == "/":
+        return "/"
+    return "/" + path.strip("/")
+
+
+def canonical_path_for(path: str) -> str:
+    normalized = normalize_route_path(path)
+    return ALIASED_CANONICAL_PATHS.get(normalized, normalized)
+
+
+def route_seo_for(path: str) -> RouteSeo | None:
+    normalized = normalize_route_path(path)
+    canonical = canonical_path_for(normalized)
+    return ROUTE_SEO.get(normalized) or ROUTE_SEO.get(canonical)
+
+
+def is_public_client_route(path: str) -> bool:
+    return normalize_route_path(path) in PUBLIC_CLIENT_ROUTE_PATHS
+
+
+def absolute_url(path: str, site_url: str = SITE_URL) -> str:
+    return urljoin(f"{site_url.rstrip('/')}/", path.lstrip("/"))
+
+
+def sitemap_xml(site_url: str = SITE_URL) -> str:
+    urls = "\n".join(
+        f"  <url><loc>{html.escape(absolute_url(path, site_url))}</loc></url>"
+        for path in CANONICAL_PUBLIC_RESEARCH_PATHS
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        f"{urls}\n"
+        "</urlset>\n"
+    )
+
+
+def _seo_content(route: RouteSeo) -> str:
+    sections = "".join(
+        f"<section><h2>{html.escape(title)}</h2><p>{html.escape(copy)}</p></section>"
+        for title, copy in route.sections
+    )
+    links = "".join(
+        f'<li><a href="{html.escape(path)}">{html.escape(label)}</a></li>'
+        for label, path in route.links
+    )
+    return (
+        '<main id="seo-content" class="seo-content" aria-label="MONEYLINE research page">'
+        f'<p class="seo-eyebrow">{html.escape(route.eyebrow)}</p>'
+        f"<h1>{html.escape(route.heading)}</h1>"
+        f"<p>{html.escape(route.intro)}</p>"
+        f"{sections}"
+        '<nav aria-label="MONEYLINE research links"><h2>Explore MONEYLINE</h2>'
+        f"<ul>{links}</ul></nav>"
+        "</main>"
+    )
+
+
+def render_index(index_html: str, path: str) -> str:
+    """Inject route-specific head tags and readable content into index.html."""
+    route = route_seo_for(path) or ROUTE_SEO["/"]
+    canonical_path = route.canonical_path
+    canonical = absolute_url(canonical_path)
+    robots = "index, follow" if route.indexable else "noindex, follow"
+
+    rendered = index_html
+    rendered = re.sub(
+        r"(<title\b[^>]*data-seo-title[^>]*>).*?(</title>)",
+        lambda match: f"{match.group(1)}{html.escape(route.title)}{match.group(2)}",
+        rendered,
+        count=1,
+        flags=re.DOTALL,
+    )
+    for marker, value in (
+        ("data-seo-description", route.description),
+        ("data-seo-og-title", route.title),
+        ("data-seo-og-description", route.description),
+        ("data-seo-og-url", canonical),
+        ("data-seo-twitter-title", route.title),
+        ("data-seo-twitter-description", route.description),
+        ("data-seo-robots", robots),
+    ):
+        rendered = re.sub(
+            rf'(<[^>]*\b{marker}\b[^>]*\bcontent=")[^"]*(")',
+            lambda match, value=value: (
+                f"{match.group(1)}{html.escape(value, quote=True)}{match.group(2)}"
+            ),
+            rendered,
+            count=1,
+        )
+    rendered = re.sub(
+        r'(<link\b[^>]*\bdata-seo-canonical\b[^>]*\bhref=")[^"]*(")',
+        lambda match: f"{match.group(1)}{html.escape(canonical, quote=True)}{match.group(2)}",
+        rendered,
+        count=1,
+    )
+
+    content = _seo_content(route)
+    if "<!-- server-seo-content -->" in rendered:
+        rendered = rendered.replace("<!-- server-seo-content -->", content, 1)
+    else:
+        rendered = rendered.replace(
+            '<div id="root"></div>', f'<div id="root">{content}</div>', 1
+        )
+    return rendered
+
+
+def not_found_html() -> str:
+    return """<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8"><meta name="robots" content="noindex"><title>Page not found | MONEYLINE</title></head>
+  <body><main><h1>Page not found</h1><p>The MONEYLINE page you requested does not exist.</p><p><a href="/">Return to MONEYLINE</a></p></main></body>
+</html>
+"""

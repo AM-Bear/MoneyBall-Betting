@@ -15,7 +15,7 @@ import pandas as pd
 from fastapi import FastAPI, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, model_validator
 
@@ -67,6 +67,13 @@ from backend.record_store import (
     void_pick,
 )
 from backend.season_sim import get_season_sim, get_team_outlook
+from backend.seo import (
+    SITEMAP_PATH,
+    is_public_client_route,
+    not_found_html,
+    render_index,
+    sitemap_xml,
+)
 from backend.wire import get_team_pulse, get_wire
 
 
@@ -76,6 +83,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("moneyline")
 DIST_DIR = Path(__file__).resolve().parents[1] / "artifacts" / "moneyline" / "dist" / "public"
+IMMUTABLE_PREFIX = "assets/"
 EQUITY_CAVEAT = (
     "Game-level lines also price pitchers, injuries, and lineups this "
     "season-aggregate model cannot see."
@@ -1095,13 +1103,43 @@ if (DIST_DIR / "assets").exists():
     app.mount("/assets", StaticFiles(directory=DIST_DIR / "assets"), name="assets")
 
 
+@app.get(SITEMAP_PATH, include_in_schema=False)
+async def sitemap():
+    return Response(
+        sitemap_xml(),
+        media_type="application/xml",
+        headers={"Cache-Control": "public, max-age=3600"},
+    )
+
+
 @app.get("/{path:path}", include_in_schema=False)
 async def spa_fallback(path: str):
-    if path.startswith("api/"):
+    if path == "api" or path.startswith("api/"):
         raise MoneylineError("not_found", "API route not found.", 404)
+    normalized_path = path.lstrip("/")
+    candidate = (DIST_DIR / normalized_path).resolve()
+    try:
+        inside = candidate.is_relative_to(DIST_DIR)
+    except ValueError:
+        inside = False
+    if inside and candidate.is_file():
+        headers = (
+            {"Cache-Control": "public, max-age=31536000, immutable"}
+            if normalized_path.startswith(IMMUTABLE_PREFIX)
+            else {"Cache-Control": "no-cache"}
+        )
+        return FileResponse(candidate, headers=headers)
+    last_segment = normalized_path.rsplit("/", 1)[-1]
+    if normalized_path.startswith(IMMUTABLE_PREFIX) or "." in last_segment:
+        return HTMLResponse(not_found_html(), status_code=404)
+    if not is_public_client_route(normalized_path):
+        return HTMLResponse(not_found_html(), status_code=404)
     index_path = DIST_DIR / "index.html"
     if index_path.exists():
-        return FileResponse(index_path, headers={"Cache-Control": "no-cache"})
+        return HTMLResponse(
+            render_index(index_path.read_text(encoding="utf-8"), normalized_path),
+            headers={"Cache-Control": "no-cache"},
+        )
     raise MoneylineError(
         "frontend_not_built",
         "The frontend build is not available in this runtime.",
