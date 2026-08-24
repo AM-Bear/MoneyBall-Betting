@@ -62,8 +62,19 @@ try {
     const page = await browser.newPage();
     const consoleErrors = [];
     const pageErrors = [];
+    let expectedAuthChallenge = false;
+    page.on("response", (response) => {
+      if (response.status() === 401 && new URL(response.url()).pathname.startsWith("/api/")) {
+        expectedAuthChallenge = true;
+      }
+    });
     page.on("console", (message) => {
-      if (message.type() === "error") consoleErrors.push(message.text());
+      // Protected research panels intentionally challenge anonymous smoke
+      // visits. Keep those expected browser resource messages from masking
+      // real route, chunk, and page errors.
+      if (message.type() === "error" && !(
+        expectedAuthChallenge && message.text().includes("Failed to load resource")
+      )) consoleErrors.push(message.text());
     });
     page.on("pageerror", (error) => pageErrors.push(error.message));
 

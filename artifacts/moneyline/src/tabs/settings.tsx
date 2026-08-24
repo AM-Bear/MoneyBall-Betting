@@ -1,4 +1,5 @@
 import { usePresentationPreferences, DetailLevel } from "@/components/presentation-preferences";
+import { Link } from "wouter";
 
 export default function SettingsPage() {
   const { preferences, updatePreferences } = usePresentationPreferences();
@@ -51,6 +52,12 @@ export default function SettingsPage() {
         <button type="button" className="quiet-button w-fit" onClick={() => updatePreferences({ ...preferences, detailLevel: "standard", explainTerms: true, guideDismissed: false })} data-testid="button-reset-preferences">
           Reset presentation preferences
         </button>
+      </section>
+      <section className="settings-card mt-6" aria-labelledby="settings-billing">
+        <p className="eyebrow">Account access</p>
+        <h2 id="settings-billing" className="mt-2 text-lg font-semibold">Research tiers and billing</h2>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">Free Today and track record access is always available. Compare tiers or manage an active subscription without changing your presentation preferences.</p>
+        <Link href="/billing" className="quiet-button mt-4 inline-flex w-fit">Open billing</Link>
       </section>
     </main>
   );

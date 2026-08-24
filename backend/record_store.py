@@ -132,11 +132,107 @@ def ensure_schema() -> bool:
         ALTER TABLE moneyline_parlay_slips
           ADD COLUMN IF NOT EXISTS model_version text
         """,
+        """
+        CREATE TABLE IF NOT EXISTS moneyline_entitlements (
+          user_id text PRIMARY KEY,
+          stripe_customer_id text UNIQUE,
+          stripe_subscription_id text UNIQUE,
+          tier text NOT NULL DEFAULT 'free',
+          status text NOT NULL DEFAULT 'free',
+          price_id text,
+          current_period_start timestamptz,
+          current_period_end timestamptz,
+          cancel_at_period_end boolean NOT NULL DEFAULT false,
+          last_event_created timestamptz,
+          updated_at timestamptz NOT NULL DEFAULT now()
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS moneyline_billing_events (
+          event_id text PRIMARY KEY,
+          event_created timestamptz NOT NULL,
+          received_at timestamptz NOT NULL DEFAULT now()
+        )
+        """,
     ]
     with _connection() as connection:
         with connection.cursor() as cursor:
             for statement in statements:
                 cursor.execute(statement)
+        connection.commit()
+    return True
+
+
+def get_entitlement(user_id: str) -> dict[str, Any] | None:
+    with _connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM moneyline_entitlements WHERE user_id = %s", (user_id,))
+            return cursor.fetchone()
+
+
+def upsert_customer(user_id: str, customer_id: str) -> None:
+    with _connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """INSERT INTO moneyline_entitlements (user_id, stripe_customer_id)
+                   VALUES (%s, %s)
+                   ON CONFLICT (user_id) DO UPDATE SET stripe_customer_id = EXCLUDED.stripe_customer_id""",
+                (user_id, customer_id),
+            )
+        connection.commit()
+
+
+def entitlement_customer(user_id: str) -> str | None:
+    row = get_entitlement(user_id)
+    return str(row["stripe_customer_id"]) if row and row.get("stripe_customer_id") else None
+
+
+def apply_billing_event(event_id: str, created: datetime, customer_id: str,
+                        state: dict[str, Any], user_id: str | None = None) -> bool:
+    """Apply only new, chronologically newer events in one transaction."""
+    with _connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO moneyline_billing_events (event_id, event_created) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                (event_id, created),
+            )
+            if cursor.rowcount == 0:
+                return False
+            if not user_id:
+                cursor.execute(
+                    "SELECT user_id FROM moneyline_entitlements WHERE stripe_customer_id = %s",
+                    (customer_id,),
+                )
+                row = cursor.fetchone()
+                user_id = str(row["user_id"]) if row else None
+            if not user_id:
+                connection.commit()
+                return True
+            cursor.execute(
+                "SELECT last_event_created FROM moneyline_entitlements WHERE user_id = %s FOR UPDATE",
+                (user_id,),
+            )
+            existing = cursor.fetchone()
+            if existing and existing["last_event_created"] and created <= existing["last_event_created"]:
+                connection.commit()
+                return True
+            cursor.execute(
+                """INSERT INTO moneyline_entitlements
+                   (user_id, stripe_customer_id, stripe_subscription_id, tier, status, price_id,
+                    current_period_start, current_period_end, cancel_at_period_end, last_event_created)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT (user_id) DO UPDATE SET
+                    stripe_customer_id=EXCLUDED.stripe_customer_id,
+                    stripe_subscription_id=EXCLUDED.stripe_subscription_id,
+                    tier=EXCLUDED.tier, status=EXCLUDED.status, price_id=EXCLUDED.price_id,
+                    current_period_start=EXCLUDED.current_period_start,
+                    current_period_end=EXCLUDED.current_period_end,
+                    cancel_at_period_end=EXCLUDED.cancel_at_period_end,
+                    last_event_created=EXCLUDED.last_event_created, updated_at=NOW()""",
+                (user_id, customer_id, state.get("stripe_subscription_id"), state["tier"],
+                 state["status"], state.get("price_id"), state.get("current_period_start"),
+                 state.get("current_period_end"), state.get("cancel_at_period_end", False), created),
+            )
         connection.commit()
     return True
 def store_slate_snapshot(slate: dict[str, Any]) -> bool:

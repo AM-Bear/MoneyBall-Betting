@@ -17,6 +17,7 @@ import SettingsPage from '@/tabs/settings';
 import { useHealth, useSession, useSlate } from '@/api';
 import { applySeoMetadata } from '@/seo';
 import { AuthScreen } from '@/components/auth';
+import BillingPage from '@/tabs/billing';
 
 const queryClient = new QueryClient();
 
@@ -110,6 +111,11 @@ const ROUTE_METADATA: Record<string, {
     title: 'MONEYLINE Settings',
     description: 'Configure the MONEYLINE presentation preferences.',
     canonical: '/settings',
+  },
+  '/billing': {
+    title: 'MONEYLINE Billing',
+    description: 'Choose a MONEYLINE research tier and manage your subscription.',
+    canonical: '/billing',
   },
 };
 
@@ -225,6 +231,7 @@ function Shell() {
         <Route path="/research"><LazyPage><ResearchHub /></LazyPage></Route>
         <Route path="/track-record"><LazyPage><TrackRecordPage /></LazyPage></Route>
         <Route path="/settings"><LazyPage><SettingsPage /></LazyPage></Route>
+        <Route path="/billing"><LazyPage><BillingPage /></LazyPage></Route>
         <Route path="/players"><ResearchRedirect to="/research/players" /></Route>
         <Route path="/research/players"><LazyPane><PlayerDeskTab /></LazyPane></Route>
         <Route path="/h2h"><ResearchRedirect to="/research/matchups" /></Route>

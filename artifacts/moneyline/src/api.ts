@@ -12,6 +12,14 @@ export class ApiError extends Error {
   }
 }
 
+export type BillingTier = {
+  id: 'free' | 'analyst' | 'pro';
+  name: string;
+  description: string;
+  price_monthly: number;
+  features: string[];
+  configured: boolean;
+};
 async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
@@ -420,5 +428,36 @@ export function useGradeRecord() {
       queryClient.setQueryData(['record'], data.record);
       queryClient.invalidateQueries({ queryKey: ['record'] });
     }
+  });
+}
+
+export function useBillingCatalog() {
+  return useQuery({
+    queryKey: ['billing', 'catalog'],
+    queryFn: () => fetchApi<{ tiers: BillingTier[]; entitlement: any }>('/billing/catalog'),
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useBillingStatus() {
+  return useQuery({
+    queryKey: ['billing', 'status'],
+    queryFn: () => fetchApi<{ entitlement: any }>('/billing/status'),
+    staleTime: 30 * 1000,
+  });
+}
+
+export function useBillingCheckout() {
+  return useMutation({
+    mutationFn: (tier: 'analyst' | 'pro') => fetchApi<{ url: string }>('/billing/checkout', {
+      method: 'POST',
+      body: JSON.stringify({ tier }),
+    }),
+  });
+}
+
+export function useBillingPortal() {
+  return useMutation({
+    mutationFn: () => fetchApi<{ url: string }>('/billing/portal', { method: 'POST' }),
   });
 }

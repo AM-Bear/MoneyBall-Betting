@@ -327,6 +327,30 @@
   .research-grid {
     @apply mt-8 grid gap-4 sm:grid-cols-2;
   }
+  .billing-grid {
+    @apply mt-8 grid gap-4 lg:grid-cols-3;
+  }
+  .billing-card {
+    @apply flex flex-col gap-5 rounded-2xl border border-border bg-card p-5;
+  }
+  .billing-card-current {
+    @apply border-primary/60;
+  }
+  .billing-price {
+    @apply text-3xl font-semibold tracking-tight;
+  }
+  .billing-price small {
+    @apply text-xs font-normal text-muted-foreground;
+  }
+  .billing-features {
+    @apply flex flex-1 flex-col gap-2 text-sm text-muted-foreground;
+  }
+  .billing-features li {
+    @apply flex items-center gap-2;
+  }
+  .billing-features svg {
+    @apply h-4 w-4 text-success;
+  }
   .research-card {
     @apply flex items-start gap-4 rounded-2xl border border-border bg-card p-5 transition-colors hover:border-primary/50 hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring;
   }
