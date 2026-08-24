@@ -18,30 +18,19 @@ import { useHealth, useSession, useSlate } from '@/api';
 import { applySeoMetadata } from '@/seo';
 import { AuthScreen } from '@/components/auth';
 import BillingPage from '@/tabs/billing';
+import seoConfig from '../seo-config.json';
 
 const queryClient = new QueryClient();
-
+// The session gate must recognize the same public paths that the server can
+// render before authentication. Keep this allowlist derived from the shared
+// route source, including legacy aliases that redirect client-side.
+const publicRouteMetadata = seoConfig.routes as Record<string, { public: boolean }>;
 export const PUBLIC_RESEARCH_ROUTES = [
-  '/',
-  '/desk',
-  '/research',
-  '/track-record',
-  '/research/players',
-  '/research/matchups',
-  '/research/parlay',
-  '/research/season',
-  '/research/wire',
-  // Legacy paths remain public so existing links can reach their canonical
-  // research route before the client redirect runs.
-  '/players',
-  '/h2h',
-  '/parlay',
-  '/season',
-  '/wire',
-  // This route is public but intentionally noindex; it is part of the
-  // backend's public SPA allowlist so signed-out preference views can render.
-  '/settings',
-] as const;
+  ...Object.entries(publicRouteMetadata)
+    .filter(([, metadata]) => metadata.public)
+    .map(([path]) => path),
+  ...Object.keys(seoConfig.aliases),
+] as readonly string[];
 
 const PUBLIC_RESEARCH_ROUTE_SET = new Set<string>(PUBLIC_RESEARCH_ROUTES);
 
@@ -50,119 +39,6 @@ function isPublicResearchRoute(location: string) {
   return PUBLIC_RESEARCH_ROUTE_SET.has(path);
 }
 
-const ROUTE_METADATA: Record<string, {
-  title: string;
-  description: string;
-  canonical: string;
-}> = {
-  '/': {
-    title: 'MONEYLINE — Baseball Research Desk',
-    description: 'Transparent baseball statistical research for team pricing, matchup edges, model track records, and paper bankroll analysis.',
-    canonical: '/',
-  },
-  '/research': {
-    title: 'Baseball Research Hub | MONEYLINE',
-    description: 'Browse MONEYLINE baseball research tools for players, matchups, parlays, season outlooks, and the latest baseball wire.',
-    canonical: '/research',
-  },
-  '/track-record': {
-    title: 'Baseball Model Track Record | MONEYLINE',
-    description: "Review the MONEYLINE baseball model track record, grading rules, historical receipts, and paper-pick performance.",
-    canonical: '/track-record',
-  },
-  '/players': {
-    title: 'Baseball Player Research | MONEYLINE',
-    description: 'Search baseball player profiles, percentile context, and Moneyball-style offensive and pitching research in MONEYLINE.',
-    canonical: '/research/players',
-  },
-  '/research/players': {
-    title: 'Baseball Player Research | MONEYLINE',
-    description: 'Search baseball player profiles, percentile context, and Moneyball-style offensive and pitching research in MONEYLINE.',
-    canonical: '/research/players',
-  },
-  '/h2h': {
-    title: 'Baseball Matchup Research | MONEYLINE',
-    description: 'Evaluate baseball team and player matchups with transparent MONEYLINE comparisons, inputs, and model context.',
-    canonical: '/research/matchups',
-  },
-  '/research/matchups': {
-    title: 'Baseball Matchup Research | MONEYLINE',
-    description: 'Evaluate baseball team and player matchups with transparent MONEYLINE comparisons, inputs, and model context.',
-    canonical: '/research/matchups',
-  },
-  '/parlay': {
-    title: 'Baseball Parlay Research | MONEYLINE',
-    description: 'Explore baseball parlay probability, expected value, vig, and half-Kelly paper-staking math with MONEYLINE.',
-    canonical: '/research/parlay',
-  },
-  '/research/parlay': {
-    title: 'Baseball Parlay Research | MONEYLINE',
-    description: 'Explore baseball parlay probability, expected value, vig, and half-Kelly paper-staking math with MONEYLINE.',
-    canonical: '/research/parlay',
-  },
-  '/season': {
-    title: 'MLB Season Research | MONEYLINE',
-    description: 'Review MLB season outlooks, team context, and transparent MONEYLINE projections for the current baseball season.',
-    canonical: '/research/season',
-  },
-  '/research/season': {
-    title: 'MLB Season Research | MONEYLINE',
-    description: 'Review MLB season outlooks, team context, and transparent MONEYLINE projections for the current baseball season.',
-    canonical: '/research/season',
-  },
-  '/wire': {
-    title: 'MLB Baseball Wire | MONEYLINE',
-    description: 'Read a focused MLB baseball wire combining transactions, news, and disclosed team context in the MONEYLINE research desk.',
-    canonical: '/research/wire',
-  },
-  '/research/wire': {
-    title: 'MLB Baseball Wire | MONEYLINE',
-    description: 'Read a focused MLB baseball wire combining transactions, news, and disclosed team context in the MONEYLINE research desk.',
-    canonical: '/research/wire',
-  },
-  '/desk': {
-    title: 'Baseball Trading Desk | MONEYLINE',
-    description: 'Open the MONEYLINE baseball trading desk for model prices, team inputs, and transparent game research.',
-    canonical: '/desk',
-  },
-  '/settings': {
-    title: 'MONEYLINE Settings',
-    description: 'Configure the MONEYLINE presentation preferences.',
-    canonical: '/settings',
-  },
-  '/billing': {
-    title: 'MONEYLINE Billing',
-    description: 'Choose a MONEYLINE research tier and manage your subscription.',
-    canonical: '/billing',
-  },
-};
-
-function RouteSeo() {
-  const [location] = useLocation();
-
-  useEffect(() => {
-    const path = location.split('?')[0].replace(/\/+$/, '') || '/';
-    const metadata = ROUTE_METADATA[path] || ROUTE_METADATA['/'];
-    document.title = metadata.title;
-
-    const setMeta = (selector: string, content: string) => {
-      const element = document.head.querySelector<HTMLMetaElement>(selector);
-      if (element) element.content = content;
-    };
-    setMeta('meta[name="description"]', metadata.description);
-    setMeta('meta[property="og:title"]', metadata.title);
-    setMeta('meta[property="og:description"]', metadata.description);
-    setMeta('meta[name="twitter:title"]', metadata.title);
-    setMeta('meta[name="twitter:description"]', metadata.description);
-
-    const canonical = document.head.querySelector<HTMLLinkElement>('link[rel="canonical"]');
-    if (canonical) canonical.href = new URL(metadata.canonical, window.location.origin).href;
-  }, [location]);
-
-  return null;
-}
-
-// New tabs lazy-mount so the v1 desk cold start stays exactly as fast.
 const PlayerDeskTab = lazy(() => import('@/tabs/player-desk'));
 const H2HTab = lazy(() => import('@/tabs/h2h'));
 const ParlayLabTab = lazy(() => import('@/tabs/parlay-lab'));
@@ -234,7 +110,6 @@ function Shell() {
 
   return (
     <div className="min-h-[100dvh] flex flex-col bg-background text-foreground overflow-hidden">
-      <RouteSeo />
       <TerminalBoot loaded={loaded} error={health.error} />
 
       <CommandBar

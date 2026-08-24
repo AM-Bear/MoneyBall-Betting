@@ -2,102 +2,97 @@
   "siteUrl": "https://money-ball-betting.replit.app",
   "siteName": "MONEYLINE",
   "socialImagePath": "/social-card.png",
+  "aliases": {
+    "/players": "/research/players",
+    "/h2h": "/research/matchups",
+    "/parlay": "/research/parlay",
+    "/season": "/research/season",
+    "/wire": "/research/wire"
+  },
   "routes": {
     "/": {
       "title": "MONEYLINE — Baseball Research Desk",
-      "description": "MONEYLINE is a transparent baseball research desk for team pricing, matchup edges, season analysis, and an honestly tracked model record.",
+      "description": "Transparent baseball statistical research for team pricing, matchup edges, model track records, and paper bankroll analysis.",
       "canonicalPath": "/",
-      "indexable": true
+      "indexable": true,
+      "public": true
     },
     "/desk": {
-      "title": "MLB Team Pricing Desk | MONEYLINE",
-      "description": "Explore transparent MLB team pricing, fair moneylines, model receipts, and historical season comparisons from the MONEYLINE research desk.",
+      "title": "Baseball Trading Desk | MONEYLINE",
+      "description": "Open the MONEYLINE baseball trading desk for model prices, team inputs, and transparent game research.",
       "canonicalPath": "/desk",
-      "indexable": true
+      "indexable": true,
+      "public": true
     },
     "/research": {
-      "title": "MLB Statistical Research Hub | MONEYLINE",
-      "description": "Browse MONEYLINE's baseball research hub for model methodology, team pricing, matchup analysis, player context, season outlooks, and documented receipts.",
+      "title": "Baseball Research Hub | MONEYLINE",
+      "description": "Browse MONEYLINE baseball research tools for players, matchups, parlays, season outlooks, and the latest baseball wire.",
       "canonicalPath": "/research",
-      "indexable": true
+      "indexable": true,
+      "public": true
     },
     "/track-record": {
-      "title": "MLB Model Track Record | MONEYLINE",
-      "description": "Review MONEYLINE's transparent MLB model track record, including graded picks, fair prices, outcomes, and the evidence behind every recorded result.",
+      "title": "Baseball Model Track Record | MONEYLINE",
+      "description": "Review the MONEYLINE baseball model track record, grading rules, historical receipts, and paper-pick performance.",
       "canonicalPath": "/track-record",
-      "indexable": true
-    },
-    "/players": {
-      "title": "MLB Player Research & Valuation | MONEYLINE",
-      "description": "Research MLB player value with MONEYLINE's transparent player desk, including historical production, run-value context, and model-ready comparisons.",
-      "canonicalPath": "/players",
-      "indexable": true
+      "indexable": true,
+      "public": true
     },
     "/research/players": {
-      "title": "Player Research Desk | MONEYLINE",
-      "description": "Use the MONEYLINE player research desk to inspect MLB player production, run-value context, and transparent statistical comparisons.",
-      "canonicalPath": "/players",
-      "indexable": true
-    },
-    "/h2h": {
-      "title": "MLB Head-to-Head Matchups | MONEYLINE",
-      "description": "Compare MLB teams and players with MONEYLINE head-to-head matchup research, historical context, and transparent statistical evidence.",
-      "canonicalPath": "/h2h",
-      "indexable": true
+      "title": "Baseball Player Research | MONEYLINE",
+      "description": "Search baseball player profiles, percentile context, and Moneyball-style offensive and pitching research in MONEYLINE.",
+      "canonicalPath": "/research/players",
+      "indexable": true,
+      "public": true
     },
     "/research/matchups": {
-      "title": "Head-to-Head Matchup Research | MONEYLINE",
-      "description": "Explore MONEYLINE's head-to-head matchup research for MLB teams and players, with historical comparisons and documented statistical context.",
-      "canonicalPath": "/h2h",
-      "indexable": true
-    },
-    "/parlay": {
-      "title": "Baseball Parlay Lab | MONEYLINE",
-      "description": "Build and inspect baseball parlay math with MONEYLINE's transparent lab for combined probability, expected value, fair price, and Kelly sizing.",
-      "canonicalPath": "/parlay",
-      "indexable": true
+      "title": "Baseball Matchup Research | MONEYLINE",
+      "description": "Evaluate baseball team and player matchups with transparent MONEYLINE comparisons, inputs, and model context.",
+      "canonicalPath": "/research/matchups",
+      "indexable": true,
+      "public": true
     },
     "/research/parlay": {
-      "title": "Parlay Research Lab | MONEYLINE",
-      "description": "Study transparent baseball parlay calculations in MONEYLINE's research lab, including combined probability, expected value, and fair pricing.",
-      "canonicalPath": "/parlay",
-      "indexable": true
-    },
-    "/season": {
-      "title": "MLB Season Simulation & Outlook | MONEYLINE",
-      "description": "Explore MONEYLINE's MLB season outlook with seeded simulations, playoff odds, standings context, and a transparent explanation of the model inputs.",
-      "canonicalPath": "/season",
-      "indexable": true
+      "title": "Baseball Parlay Research | MONEYLINE",
+      "description": "Explore baseball parlay probability, expected value, vig, and half-Kelly paper-staking math with MONEYLINE.",
+      "canonicalPath": "/research/parlay",
+      "indexable": true,
+      "public": true
     },
     "/research/season": {
-      "title": "Season Simulation Research | MONEYLINE",
-      "description": "Review MONEYLINE season simulation research for MLB standings and playoff outlooks, with disclosed inputs and reproducible model context.",
-      "canonicalPath": "/season",
-      "indexable": true
-    },
-    "/wire": {
-      "title": "MLB News & Transaction Wire | MONEYLINE",
-      "description": "Follow the MONEYLINE MLB wire for transactions, team news, media pulse, and disclosed context kept separate from the model's prices.",
-      "canonicalPath": "/wire",
-      "indexable": true
+      "title": "MLB Season Research | MONEYLINE",
+      "description": "Review MLB season outlooks, team context, and transparent MONEYLINE projections for the current baseball season.",
+      "canonicalPath": "/research/season",
+      "indexable": true,
+      "public": true
     },
     "/research/wire": {
-      "title": "Baseball Research Wire | MONEYLINE",
-      "description": "Read MONEYLINE's baseball research wire for MLB transactions, news, team pulse, and context that never changes a model price.",
-      "canonicalPath": "/wire",
-      "indexable": true
+      "title": "MLB Baseball Wire | MONEYLINE",
+      "description": "Read a focused MLB baseball wire combining transactions, news, and disclosed team context in the MONEYLINE research desk.",
+      "canonicalPath": "/research/wire",
+      "indexable": true,
+      "public": true
     },
     "/settings": {
       "title": "MONEYLINE Settings",
       "description": "Configure MONEYLINE presentation preferences for the baseball research desk.",
       "canonicalPath": "/settings",
-      "indexable": false
+      "indexable": false,
+      "public": true
+    },
+    "/billing": {
+      "title": "MONEYLINE Billing",
+      "description": "Choose a MONEYLINE research tier and manage your subscription.",
+      "canonicalPath": "/billing",
+      "indexable": false,
+      "public": false
     },
     "/404": {
       "title": "Page Not Found | MONEYLINE",
       "description": "The requested MONEYLINE page could not be found.",
       "canonicalPath": "/",
-      "indexable": false
+      "indexable": false,
+      "public": false
     }
   }
 }

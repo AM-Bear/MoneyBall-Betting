@@ -32,9 +32,15 @@ type SeoMetadata = {
   description: string;
   canonicalPath: string;
   indexable: boolean;
+  public: boolean;
 };
 
 const seoRoutes = seoConfig.routes as Record<string, SeoMetadata>;
+const seoAliases = seoConfig.aliases as Record<string, string>;
+
+function routeMetadataFor(pathname: string) {
+  return seoRoutes[seoAliases[pathname] ?? pathname] ?? seoRoutes['/404'];
+}
 
 function escapeHtml(value: string) {
   return value
@@ -72,7 +78,7 @@ function routeMetadataPlugin(): Plugin {
         const normalizedPath = pathname === '/'
           ? '/'
           : `/${pathname.replace(/^\/+|\/+$/g, '')}`;
-        const metadata = seoRoutes[normalizedPath] ?? seoRoutes['/404'];
+        const metadata = routeMetadataFor(normalizedPath);
         const siteUrl = seoConfig.siteUrl.replace(/\/+$/, '');
         const canonicalUrl = `${siteUrl}${metadata.canonicalPath === '/' ? '' : metadata.canonicalPath}`;
         const imageUrl = `${siteUrl}${seoConfig.socialImagePath}`;
@@ -83,7 +89,7 @@ function routeMetadataPlugin(): Plugin {
         );
         for (const [tagName, marker, value] of [
           ['meta', 'description', metadata.description],
-          ['meta', 'robots', metadata.indexable ? 'index, follow' : 'noindex, nofollow'],
+          ['meta', 'robots', metadata.indexable ? 'index, follow' : 'noindex, follow'],
           ['meta', 'og-title', metadata.title],
           ['meta', 'og-description', metadata.description],
           ['meta', 'og-url', canonicalUrl],

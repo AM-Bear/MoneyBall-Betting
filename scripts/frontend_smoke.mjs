@@ -8,11 +8,15 @@
  * fallback, lazy route chunks, and tab wiring regressions in one command.
  */
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import process from "node:process";
 import { chromium } from "../artifacts/moneyline/node_modules/playwright/index.mjs";
 
 const port = Number(process.env.FRONTEND_SMOKE_PORT || 18765);
 const baseUrl = `http://127.0.0.1:${port}`;
+const seoConfig = JSON.parse(
+  await readFile(new URL("../artifacts/moneyline/seo-config.json", import.meta.url), "utf8"),
+);
 const routes = [
   { requested: "/", expected: "/", heading: "Today" },
   { requested: "/players", expected: "/research/players", heading: "PLAYER DESK" },
@@ -144,6 +148,26 @@ try {
       const pathname = new URL(page.url()).pathname;
       if (pathname !== route.expected) {
         throw new Error(`expected final path ${route.expected}, got ${pathname}`);
+      }
+      const metadata = seoConfig.routes[route.expected];
+      if (!metadata) throw new Error(`missing shared SEO metadata for ${route.expected}`);
+      const observedMetadata = await page.evaluate(() => ({
+        title: document.title,
+        description: document.querySelector('meta[name="description"]')?.getAttribute("content"),
+        robots: document.querySelector('meta[name="robots"]')?.getAttribute("content"),
+        canonical: document.querySelector('link[rel="canonical"]')?.getAttribute("href"),
+        ogUrl: document.querySelector('meta[property="og:url"]')?.getAttribute("content"),
+      }));
+      const expectedCanonical = `${baseUrl}${metadata.canonicalPath === "/" ? "" : metadata.canonicalPath}`;
+      const expectedRobots = metadata.indexable ? "index, follow" : "noindex, follow";
+      if (
+        observedMetadata.title !== metadata.title ||
+        observedMetadata.description !== metadata.description ||
+        observedMetadata.robots !== expectedRobots ||
+        observedMetadata.canonical !== expectedCanonical ||
+        observedMetadata.ogUrl !== expectedCanonical
+      ) {
+        throw new Error(`hydrated metadata did not match the shared source for ${route.expected}`);
       }
       if (consoleErrors.length || pageErrors.length) {
         throw new Error([

@@ -3,11 +3,19 @@
 import json
 import re
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 from starlette.testclient import TestClient
 
 from backend.serve_spa import DIST_DIR, app
-from backend.seo import CANONICAL_PUBLIC_RESEARCH_PATHS
+from backend.seo import (
+    ALIASED_CANONICAL_PATHS,
+    CANONICAL_PUBLIC_RESEARCH_PATHS,
+    ROUTE_METADATA,
+    SEO_CONFIG_PATH,
+    absolute_url,
+    render_index,
+)
 
 client = TestClient(app)
 
@@ -50,6 +58,34 @@ def test_research_route_includes_pre_javascript_content_and_metadata() -> None:
         'href="https://money-ball-betting.replit.app/research/players"'
         in response.text
     )
+
+def test_server_metadata_matches_the_shared_route_source_for_all_public_urls() -> None:
+    """Aliases and canonical pages must render the same source-defined metadata."""
+    config = json.loads(SEO_CONFIG_PATH.read_text(encoding="utf-8"))
+    template = (Path("artifacts/moneyline") / "index.html").read_text(encoding="utf-8")
+
+    assert config["aliases"] == ALIASED_CANONICAL_PATHS
+    for canonical_path, expected in config["routes"].items():
+        metadata = ROUTE_METADATA[canonical_path]
+        assert metadata.title == expected["title"]
+        assert metadata.description == expected["description"]
+        assert metadata.canonical_path == expected["canonicalPath"]
+        assert metadata.indexable is expected["indexable"]
+        assert metadata.public is expected["public"]
+
+    public_paths = [
+        path for path, metadata in ROUTE_METADATA.items() if metadata.public
+    ]
+    for path in [*public_paths, *ALIASED_CANONICAL_PATHS]:
+        metadata = ROUTE_METADATA[ALIASED_CANONICAL_PATHS.get(path, path)]
+        rendered = render_index(template, path)
+        canonical = absolute_url(metadata.canonical_path)
+        robots = "index, follow" if metadata.indexable else "noindex, follow"
+        assert f"<title data-seo=\"title\" data-seo-title>{metadata.title}</title>" in rendered
+        assert f'content="{metadata.description}"' in rendered
+        assert f'content="{canonical}"' in rendered
+        assert f'href="{canonical}"' in rendered
+        assert f'content="{robots}"' in rendered
 
 
 def _json_ld_documents(markup: str) -> list[dict[str, object]]:

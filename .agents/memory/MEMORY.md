@@ -6,3 +6,4 @@
 - [Deployment startup probe & process split](deployment-startup-probe.md) — prod runs one backend.main (api) + lightweight serve_spa (web); two heavy processes time out the promote probe.
 - [Frontend browser smoke runtime](frontend-browser-smoke-runtime.md) — headless Chromium needs declared Nix libraries and an install step for repeatable fresh-workspace validation.
 - [PostgreSQL partial uniqueness](postgres-partial-uniqueness.md) — ON CONFLICT inference for a partial unique index must repeat the index predicate.
+- [Shared route metadata](shared-route-metadata.md) — SEO titles, descriptions, robots, canonicals, aliases, public paths, and sitemap eligibility have one JSON authority.

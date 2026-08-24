@@ -12,6 +12,7 @@ import json
 import os
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urljoin
 
 
@@ -25,19 +26,99 @@ SEO_CONTENT_PLACEHOLDER = "<!-- server-seo-content -->"
 SEO_STRUCTURED_DATA_PLACEHOLDER = "<!-- server-seo-structured-data -->"
 
 SITEMAP_PATH = "/sitemap.xml"
+SEO_CONFIG_PATH = (
+    Path(__file__).resolve().parents[1] / "artifacts" / "moneyline" / "seo-config.json"
+)
+
+
+@dataclass(frozen=True)
+class RouteMetadata:
+    title: str
+    description: str
+    canonical_path: str
+    indexable: bool
+    public: bool
+
+
+def _load_route_metadata() -> tuple[
+    dict[str, RouteMetadata], dict[str, str]
+]:
+    """Load the JSON metadata source consumed by every MONEYLINE renderer."""
+    try:
+        config = json.loads(SEO_CONFIG_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            f"Unable to load the shared SEO config at {SEO_CONFIG_PATH}."
+        ) from exc
+
+    raw_routes = config.get("routes")
+    raw_aliases = config.get("aliases")
+    if not isinstance(raw_routes, dict) or not isinstance(raw_aliases, dict):
+        raise RuntimeError("Shared SEO config must define object-valued routes and aliases.")
+
+    required = {"title", "description", "canonicalPath", "indexable", "public"}
+    routes: dict[str, RouteMetadata] = {}
+    for path, raw_route in raw_routes.items():
+        if not isinstance(path, str) or not path.startswith("/") or not isinstance(
+            raw_route, dict
+        ):
+            raise RuntimeError("Shared SEO config contains an invalid route.")
+        missing = required - raw_route.keys()
+        if missing:
+            raise RuntimeError(
+                f"Shared SEO config route {path!r} is missing: {sorted(missing)!r}."
+            )
+        title = raw_route["title"]
+        description = raw_route["description"]
+        canonical_path = raw_route["canonicalPath"]
+        indexable = raw_route["indexable"]
+        public = raw_route["public"]
+        if not (
+            isinstance(title, str)
+            and isinstance(description, str)
+            and isinstance(canonical_path, str)
+            and canonical_path.startswith("/")
+            and type(indexable) is bool
+            and type(public) is bool
+        ):
+            raise RuntimeError(f"Shared SEO config route {path!r} has invalid metadata.")
+        routes[path] = RouteMetadata(
+            title=title,
+            description=description,
+            canonical_path=canonical_path,
+            indexable=indexable,
+            public=public,
+        )
+
+    aliases: dict[str, str] = {}
+    for alias, canonical in raw_aliases.items():
+        if (
+            not isinstance(alias, str)
+            or not alias.startswith("/")
+            or not isinstance(canonical, str)
+            or canonical not in routes
+        ):
+            raise RuntimeError("Shared SEO config contains an invalid route alias.")
+        aliases[alias] = canonical
+
+    for path, metadata in routes.items():
+        if metadata.canonical_path not in routes:
+            raise RuntimeError(
+                f"Shared SEO config route {path!r} has an unknown canonical path."
+            )
+    return routes, aliases
+
+
+ROUTE_METADATA, ALIASED_CANONICAL_PATHS = _load_route_metadata()
 
 
 @dataclass(frozen=True)
 class RouteSeo:
-    title: str
-    description: str
     heading: str
     eyebrow: str
     intro: str
     sections: tuple[tuple[str, str], ...]
     links: tuple[tuple[str, str], ...]
-    canonical_path: str
-    indexable: bool = True
 
 
 COMMON_LINKS = (
@@ -51,9 +132,8 @@ COMMON_LINKS = (
     ("Baseball wire", "/research/wire"),
 )
 
-# Keep the destination metadata in one place for the server-rendered schema and
-# the Research Hub's visible server copy. The React page mirrors these values in
-# its client-side schema so hydration does not change the machine-readable page.
+# Keep these destinations aligned between the visible server copy and the
+# research hub's server-rendered ItemList schema.
 RESEARCH_DESTINATIONS = (
     (
         "/research/players",
@@ -88,11 +168,6 @@ TRACK_RECORD_STRUCTURED_DATA_DESCRIPTION = (
 
 ROUTE_SEO: dict[str, RouteSeo] = {
     "/": RouteSeo(
-        title="MONEYLINE — Baseball Research Desk",
-        description=(
-            "Transparent baseball statistical research for team pricing, "
-            "matchup edges, model track records, and paper bankroll analysis."
-        ),
         heading="Baseball research, priced transparently",
         eyebrow="MONEYLINE / STATISTICAL RESEARCH DESK",
         intro=(
@@ -112,14 +187,8 @@ ROUTE_SEO: dict[str, RouteSeo] = {
             ),
         ),
         links=COMMON_LINKS,
-        canonical_path="/",
     ),
     "/research": RouteSeo(
-        title="Baseball Research Hub | MONEYLINE",
-        description=(
-            "Browse MONEYLINE baseball research tools for players, matchups, "
-            "parlays, season outlooks, and the latest baseball wire."
-        ),
         heading="Baseball research hub",
         eyebrow="MONEYLINE / RESEARCH",
         intro=(
@@ -135,14 +204,8 @@ ROUTE_SEO: dict[str, RouteSeo] = {
             ),
         ),
         links=tuple((label, href) for href, label, _ in RESEARCH_DESTINATIONS),
-        canonical_path="/research",
     ),
     "/track-record": RouteSeo(
-        title="Baseball Model Track Record | MONEYLINE",
-        description=(
-            "Review the MONEYLINE baseball model track record, grading rules, "
-            "historical receipts, and paper-pick performance."
-        ),
         heading="Baseball model track record",
         eyebrow="MONEYLINE / TRACK RECORD",
         intro=(
@@ -161,14 +224,8 @@ ROUTE_SEO: dict[str, RouteSeo] = {
             ("Today's slate", "/"),
             ("Season research", "/research/season"),
         ),
-        canonical_path="/track-record",
     ),
     "/research/players": RouteSeo(
-        title="Baseball Player Research | MONEYLINE",
-        description=(
-            "Search baseball player profiles, percentile context, and "
-            "Moneyball-style offensive and pitching research in MONEYLINE."
-        ),
         heading="Baseball player research",
         eyebrow="MONEYLINE / PLAYERS",
         intro=(
@@ -188,14 +245,8 @@ ROUTE_SEO: dict[str, RouteSeo] = {
             ("Matchup research", "/research/matchups"),
             ("Season research", "/research/season"),
         ),
-        canonical_path="/research/players",
     ),
     "/research/matchups": RouteSeo(
-        title="Baseball Matchup Research | MONEYLINE",
-        description=(
-            "Evaluate baseball team and player matchups with transparent "
-            "MONEYLINE comparisons, inputs, and model context."
-        ),
         heading="Baseball matchup research",
         eyebrow="MONEYLINE / MATCHUPS",
         intro=(
@@ -215,14 +266,8 @@ ROUTE_SEO: dict[str, RouteSeo] = {
             ("Player research", "/research/players"),
             ("Today's slate", "/"),
         ),
-        canonical_path="/research/matchups",
     ),
     "/research/parlay": RouteSeo(
-        title="Baseball Parlay Research | MONEYLINE",
-        description=(
-            "Explore baseball parlay probability, expected value, vig, and "
-            "half-Kelly paper-staking math with MONEYLINE."
-        ),
         heading="Baseball parlay research",
         eyebrow="MONEYLINE / PARLAY LAB",
         intro=(
@@ -242,14 +287,8 @@ ROUTE_SEO: dict[str, RouteSeo] = {
             ("Today's slate", "/"),
             ("Model track record", "/track-record"),
         ),
-        canonical_path="/research/parlay",
     ),
     "/research/season": RouteSeo(
-        title="MLB Season Research | MONEYLINE",
-        description=(
-            "Review MLB season outlooks, team context, and transparent "
-            "MONEYLINE projections for the current baseball season."
-        ),
         heading="MLB season research",
         eyebrow="MONEYLINE / SEASON DESK",
         intro=(
@@ -268,14 +307,8 @@ ROUTE_SEO: dict[str, RouteSeo] = {
             ("Today's slate", "/"),
             ("Baseball wire", "/research/wire"),
         ),
-        canonical_path="/research/season",
     ),
     "/research/wire": RouteSeo(
-        title="MLB Baseball Wire | MONEYLINE",
-        description=(
-            "Read a focused MLB baseball wire combining transactions, news, "
-            "and disclosed team context in the MONEYLINE research desk."
-        ),
         heading="MLB baseball wire",
         eyebrow="MONEYLINE / WIRE",
         intro=(
@@ -295,14 +328,8 @@ ROUTE_SEO: dict[str, RouteSeo] = {
             ("Season research", "/research/season"),
             ("Today's slate", "/"),
         ),
-        canonical_path="/research/wire",
     ),
     "/desk": RouteSeo(
-        title="Baseball Trading Desk | MONEYLINE",
-        description=(
-            "Open the MONEYLINE baseball trading desk for model prices, "
-            "team inputs, and transparent game research."
-        ),
         heading="Baseball trading desk",
         eyebrow="MONEYLINE / DESK",
         intro=(
@@ -322,54 +349,35 @@ ROUTE_SEO: dict[str, RouteSeo] = {
             ("Today's slate", "/"),
             ("Model track record", "/track-record"),
         ),
-        canonical_path="/desk",
     ),
     "/settings": RouteSeo(
-        title="MONEYLINE Settings",
-        description="Configure the MONEYLINE presentation preferences.",
         heading="MONEYLINE settings",
         eyebrow="MONEYLINE / SETTINGS",
         intro="Presentation controls for the MONEYLINE research desk.",
         sections=(),
         links=(("Return to research", "/research"),),
-        canonical_path="/settings",
-        indexable=False,
     ),
 }
 
-# These are the only clean paths the client router intentionally owns.  The
-# short paths remain supported for existing links but are not canonical.
+# The shared config is also the authority for public server routes and sitemap
+# inclusion. Shortcut aliases are supported but intentionally remain absent
+# from the sitemap.
 PUBLIC_CLIENT_ROUTE_PATHS = frozenset(
     {
-        *ROUTE_SEO,
-        "/players",
-        "/h2h",
-        "/parlay",
-        "/season",
-        "/wire",
+        *(
+            path
+            for path, metadata in ROUTE_METADATA.items()
+            if metadata.public
+        ),
+        *ALIASED_CANONICAL_PATHS,
     }
 )
 
-CANONICAL_PUBLIC_RESEARCH_PATHS = (
-    "/",
-    "/desk",
-    "/research",
-    "/track-record",
-    "/research/players",
-    "/research/matchups",
-    "/research/parlay",
-    "/research/season",
-    "/research/wire",
+CANONICAL_PUBLIC_RESEARCH_PATHS = tuple(
+    path
+    for path, metadata in ROUTE_METADATA.items()
+    if metadata.public and metadata.indexable
 )
-
-ALIASED_CANONICAL_PATHS = {
-    "/players": "/research/players",
-    "/h2h": "/research/matchups",
-    "/parlay": "/research/parlay",
-    "/season": "/research/season",
-    "/wire": "/research/wire",
-}
-
 
 def normalize_route_path(path: str) -> str:
     """Normalize clean client paths without accepting arbitrary URL shapes."""
@@ -384,9 +392,11 @@ def canonical_path_for(path: str) -> str:
 
 
 def route_seo_for(path: str) -> RouteSeo | None:
-    normalized = normalize_route_path(path)
-    canonical = canonical_path_for(normalized)
-    return ROUTE_SEO.get(normalized) or ROUTE_SEO.get(canonical)
+    return ROUTE_SEO.get(canonical_path_for(path))
+
+
+def route_metadata_for(path: str) -> RouteMetadata | None:
+    return ROUTE_METADATA.get(canonical_path_for(path))
 
 
 def is_public_client_route(path: str) -> bool:
@@ -474,12 +484,12 @@ def _json_ld_script(data: dict[str, object]) -> str:
 
 
 def _route_structured_data(path: str, site_url: str = SITE_URL) -> str:
-    """Return the route schema for the two public pages with one schema each."""
-    route = route_seo_for(path)
-    if route is None:
+    """Return schema for public routes that have a dedicated page entity."""
+    metadata = route_metadata_for(path)
+    if metadata is None:
         return ""
 
-    canonical = route.canonical_path
+    canonical = metadata.canonical_path
     if canonical == "/research":
         data: dict[str, object] = {
             "@context": "https://schema.org",
@@ -538,25 +548,25 @@ def _route_structured_data(path: str, site_url: str = SITE_URL) -> str:
 def render_index(index_html: str, path: str) -> str:
     """Inject route-specific head tags and readable content into index.html."""
     route = route_seo_for(path) or ROUTE_SEO["/"]
-    canonical_path = route.canonical_path
-    canonical = absolute_url(canonical_path)
-    robots = "index, follow" if route.indexable else "noindex, follow"
+    metadata = route_metadata_for(path) or ROUTE_METADATA["/"]
+    canonical = absolute_url(metadata.canonical_path)
+    robots = "index, follow" if metadata.indexable else "noindex, follow"
 
     rendered = index_html
     rendered = re.sub(
         r"(<title\b[^>]*data-seo-title[^>]*>).*?(</title>)",
-        lambda match: f"{match.group(1)}{html.escape(route.title)}{match.group(2)}",
+        lambda match: f"{match.group(1)}{html.escape(metadata.title)}{match.group(2)}",
         rendered,
         count=1,
         flags=re.DOTALL,
     )
     for marker, value in (
-        ("data-seo-description", route.description),
-        ("data-seo-og-title", route.title),
-        ("data-seo-og-description", route.description),
+        ("data-seo-description", metadata.description),
+        ("data-seo-og-title", metadata.title),
+        ("data-seo-og-description", metadata.description),
         ("data-seo-og-url", canonical),
-        ("data-seo-twitter-title", route.title),
-        ("data-seo-twitter-description", route.description),
+        ("data-seo-twitter-title", metadata.title),
+        ("data-seo-twitter-description", metadata.description),
         ("data-seo-robots", robots),
     ):
         rendered = _set_seo_attribute(rendered, marker, "content", value)

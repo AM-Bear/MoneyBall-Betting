@@ -44,7 +44,7 @@ function routeHtml(metadata) {
   );
   for (const [marker, attribute, value] of [
     ["meta", "description", metadata.description],
-    ["meta", "robots", metadata.indexable ? "index, follow" : "noindex, nofollow"],
+    ["meta", "robots", metadata.indexable ? "index, follow" : "noindex, follow"],
     ["meta", "og-title", metadata.title],
     ["meta", "og-description", metadata.description],
     ["meta", "og-url", canonicalUrl],
@@ -63,11 +63,13 @@ function routeHtml(metadata) {
   return html;
 }
 
+let generatedCount = 0;
 for (const [routePath, metadata] of Object.entries(config.routes)) {
-  if (routePath === "/404") continue;
+  if (!metadata.public) continue;
   const outputDir = routePath === "/" ? distDir : path.join(distDir, routePath.slice(1));
   await mkdir(outputDir, { recursive: true });
   await writeFile(path.join(outputDir, "index.html"), routeHtml(metadata));
+  generatedCount += 1;
 }
 
-console.log(`Generated route-aware HTML for ${Object.keys(config.routes).length - 1} public routes.`);
+console.log(`Generated route-aware HTML for ${generatedCount} public routes.`);

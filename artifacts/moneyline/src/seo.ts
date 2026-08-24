@@ -5,9 +5,11 @@ export interface SeoRouteMetadata {
   description: string;
   canonicalPath: string;
   indexable: boolean;
+  public: boolean;
 }
 
 const routes = seoConfig.routes as Record<string, SeoRouteMetadata>;
+const aliases = seoConfig.aliases as Record<string, string>;
 
 function normalizePathname(pathname: string) {
   const path = pathname.split("?")[0].split("#")[0] || "/";
@@ -16,7 +18,8 @@ function normalizePathname(pathname: string) {
 }
 
 export function getSeoRouteMetadata(pathname: string) {
-  return routes[normalizePathname(pathname)] ?? routes["/404"];
+  const normalizedPath = normalizePathname(pathname);
+  return routes[aliases[normalizedPath] ?? normalizedPath] ?? routes["/404"];
 }
 
 function absoluteUrl(pathname: string) {
@@ -55,7 +58,7 @@ export function applySeoMetadata(pathname: string) {
 
   document.title = metadata.title;
   upsertMeta("name", "description", metadata.description);
-  upsertMeta("name", "robots", metadata.indexable ? "index, follow" : "noindex, nofollow");
+  upsertMeta("name", "robots", metadata.indexable ? "index, follow" : "noindex, follow");
   upsertMeta("property", "og:title", metadata.title);
   upsertMeta("property", "og:description", metadata.description);
   upsertMeta("property", "og:url", canonicalUrl);
