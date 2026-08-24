@@ -137,15 +137,52 @@ def test_three_legs_refuse_on_the_correlated_pair(live_slate: None) -> None:
     assert response.json()["error"]["code"] == "correlated_legs"
 
 
-def test_matchup_key_is_order_independent_and_date_scoped() -> None:
-    """The key itself, in isolation."""
+def test_matchup_key_is_order_independent_and_not_date_scoped() -> None:
+    """The key itself, in isolation.
+
+    Not date-scoped, deliberately. Every leg resolves against one
+    `get_slate()` call for today, so the day is fixed by construction.
+    See the UTC-rollover test below for why including it would be a bug.
+    """
     game_one = _game("790001", "NYY", "BOS", 0.55)
     game_two = _game("790002", "NYY", "BOS", 0.55)
     reversed_hosts = _game("790004", "BOS", "NYY", 0.52)
     other_matchup = _game("790003", "TBR", "TOR", 0.60)
-    next_day = {**game_one, "game_pk": "790005", "game_date": "2026-08-25"}
 
     assert main._matchup_key(game_one) == main._matchup_key(game_two)
     assert main._matchup_key(game_one) == main._matchup_key(reversed_hosts)
     assert main._matchup_key(game_one) != main._matchup_key(other_matchup)
-    assert main._matchup_key(game_one) != main._matchup_key(next_day)
+
+
+def test_day_night_doubleheader_across_the_utc_rollover_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ordinary doubleheader, and the case a date-scoped key would miss.
+
+    `game_date` is `gameDate[:10]` — UTC. On one ET slate an afternoon game
+    keeps today's UTC date while an 8pm ET nightcap has already rolled to
+    tomorrow's. Keying the matchup on (pair, date) would therefore treat a
+    standard day-night doubleheader as two independent matchups: precisely
+    the case the gate exists to catch, and the most common doubleheader
+    format there is.
+    """
+    afternoon = _game("790101", "NYY", "BOS", 0.55)
+    nightcap = {**_game("790102", "NYY", "BOS", 0.55), "game_date": "2026-08-25"}
+
+    # The key must collide despite the differing UTC dates.
+    assert main._matchup_key(afternoon) == main._matchup_key(nightcap)
+
+    async def fake_slate(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        return {"mode": "live", "date": SLATE_DATE, "games": [afternoon, nightcap]}
+
+    monkeypatch.setattr(main, "get_slate", fake_slate)
+
+    response = TestClient(main.app).post(
+        "/api/parlay/price",
+        json={"legs": [
+            {"gamePk": "790101", "side": "home"},
+            {"gamePk": "790102", "side": "home"},
+        ]},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "correlated_legs"

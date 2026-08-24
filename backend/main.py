@@ -1009,7 +1009,7 @@ async def player_card(player_id: int) -> dict[str, Any]:
         )
     return card
 
-def _matchup_key(row: dict[str, Any]) -> tuple[frozenset[str], str]:
+def _matchup_key(row: dict[str, Any]) -> frozenset[str]:
     """Identify the *matchup*, not the game instance.
 
     A doubleheader is two distinct gamePks between the same two clubs on the
@@ -1017,8 +1017,16 @@ def _matchup_key(row: dict[str, Any]) -> tuple[frozenset[str], str]:
     math multiplies them as if they were independent. They are not: the two
     games share both rosters and both bullpens. The pair is unordered so a
     home/away swap between the games still collides.
+
+    Deliberately NOT keyed on the date. Every leg is resolved against one
+    ``get_slate()`` call for today, so the day is fixed by construction and a
+    date component adds nothing. Worse, it would subtract: ``game_date`` is
+    ``gameDate[:10]`` in UTC, so an afternoon game and an 8pm ET nightcap on
+    the same ET slate carry different dates. Keying on the date would let the
+    ordinary day-night doubleheader -- the exact case this guards -- slip
+    through.
     """
-    return frozenset({str(row["home"]), str(row["away"])}), str(row["game_date"])
+    return frozenset({str(row["home"]), str(row["away"])})
 
 
 async def _resolve_parlay_legs(payload: ParlayInput) -> list[dict[str, Any]]:
