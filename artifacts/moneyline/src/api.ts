@@ -293,7 +293,10 @@ export interface EvaluateSide {
   signal_provisional: boolean | null;
   gap: number | null;
   volatility: 'Lower' | 'Typical' | 'Higher' | null;
-  uncertainty: 'Low' | 'Moderate' | 'High';
+  /** 'Unknown' is a real runtime state, not a placeholder: the engine returns
+   *  it when games played is missing, because "Low" would be a claim with
+   *  nothing behind it. See backend/verdict.py::_uncertainty. */
+  uncertainty: 'Low' | 'Moderate' | 'High' | 'Unknown';
   agree: boolean | null;
   flags: VerdictFlag[];
   basis_note: string | null;

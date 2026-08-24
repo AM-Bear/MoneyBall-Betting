@@ -137,3 +137,47 @@ def test_an_unfinished_leg_leaves_the_slip_pending(slip) -> None:
     row = _fetch(slip_id)
     assert row["result"] is None
     assert row["units_pnl"] is None
+
+
+def test_settled_basis_is_read_from_the_row_not_guessed_from_a_date():
+    """The disclosure may only claim what a row actually evidences.
+
+    The NULL-book_line fallback changed from the slip's own `fair_line` to
+    compounded -110 legs, and the deploy time of that change is recorded
+    nowhere. An earlier disclosure told the reader every fallback slip "was
+    settled at the -110 legs compounded" -- false for any row graded before
+    the change, and unknowable for a loss, which is -1.00u either way.
+    """
+    from backend.odds import decimal_odds, parlay_book_decimal
+    from backend.record_store import STANDARD_LEG_LINE, _settled_basis
+
+    legs = [{"gamePk": "1", "side": "home"}, {"gamePk": "2", "side": "away"}]
+
+    compounded = parlay_book_decimal([STANDARD_LEG_LINE] * 2) - 1
+    assert _settled_basis(
+        {"book_line": None, "result": "WIN", "units_pnl": compounded,
+         "fair_line": 175, "legs": legs}
+    ) == "standard_-110_compounded"
+
+    retired = decimal_odds(175) - 1
+    assert _settled_basis(
+        {"book_line": None, "result": "WIN", "units_pnl": retired,
+         "fair_line": 175, "legs": legs}
+    ) == "fair_line_retired"
+
+    # A loss is -1.0 under either basis. Saying which one settled it would be
+    # a guess dressed as a fact.
+    assert _settled_basis(
+        {"book_line": None, "result": "LOSS", "units_pnl": -1.0,
+         "fair_line": 320, "legs": legs}
+    ) == "indistinguishable"
+
+    assert _settled_basis(
+        {"book_line": 596, "result": "LOSS", "units_pnl": -1.0,
+         "fair_line": 320, "legs": legs}
+    ) == "book_price"
+
+    assert _settled_basis(
+        {"book_line": None, "result": None, "units_pnl": None,
+         "fair_line": 320, "legs": legs}
+    ) is None

@@ -421,6 +421,11 @@ def evaluate(
             side["verdict_reason"] = "status_frozen"
             side["signal"] = None
             side["signal_provisional"] = None
+            # Flags go too. They are artifacts of an evaluation that did not
+            # happen, not facts about the game: leaving `no_price` on a frozen
+            # card renders a chip telling the reader to enter a price, next to
+            # a price input the card does not show for a started game.
+            side["flags"] = []
         return _envelope(home, away, game, gp_home, gp_away, min_gp)
 
     if sample_gate is not None:

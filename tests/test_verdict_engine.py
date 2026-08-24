@@ -276,6 +276,23 @@ def test_desk_a_started_game_is_frozen_with_no_verdict():
         assert home(result)["verdict_reason"] == "status_frozen"
 
 
+def test_desk_a_frozen_game_carries_no_evaluation_flags():
+    """Flags are outputs of an evaluation that did not happen.
+
+    Leaving `no_price` on a frozen side made the card render a "No book price
+    entered" chip beside a "Verdict frozen" pill -- pointing the reader at a
+    price input the card does not show for a started game.
+    """
+    result = evaluate(
+        p_season_home=0.58, p_adj_home=0.58, status="final", **FULL_SEASON
+    )
+    assert home(result)["flags"] == []
+    assert away(result)["flags"] == []
+    # A scheduled game with the same inputs still reports them.
+    live = evaluate(p_season_home=0.58, p_adj_home=0.58, **FULL_SEASON)
+    assert "no_price" in home(live)["flags"]
+
+
 def test_desk_missing_games_played_gates_rather_than_defaulting():
     result = evaluate(
         p_season_home=0.58, p_adj_home=0.58, price_home=-115,

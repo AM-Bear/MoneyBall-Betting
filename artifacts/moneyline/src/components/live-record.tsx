@@ -33,6 +33,22 @@ export function LiveRecordPanel() {
   // written before versioning carries NULL and is counted, not relabelled;
   // saying "MODEL v1" over it would assert something never checked against
   // it, which is the exact claim backend/record_store.py refuses to make.
+  // Spelled out from the bases the rows evidence, never from an assumed
+  // cutover date. `indistinguishable` is a loss: -1.0 under either basis, so
+  // there is nothing to claim about how it settled.
+  const bases: Record<string, number> = data.parlay_record?.settled_bases ?? {};
+  const retired = bases["fair_line_retired"] ?? 0;
+  const compounded = bases["standard_-110_compounded"] ?? 0;
+  const indistinguishable = bases["indistinguishable"] ?? 0;
+  const basisParts: string[] = [];
+  if (compounded > 0) basisParts.push(`${compounded} settled at the −110 legs compounded`);
+  if (retired > 0) basisParts.push(`${retired} at the retired fair-line basis`);
+  if (indistinguishable > 0)
+    basisParts.push(
+      `${indistinguishable} ${indistinguishable === 1 ? "was a loss, which grades" : "were losses, which grade"} to −1.00u under either basis`,
+    );
+  const parlayBasisSentence = basisParts.length ? ` Of those, ${basisParts.join("; ")}.` : "";
+
   const versionsPresent: string[] = data.model_versions_present ?? [];
   const unversioned: number = data.unversioned_picks ?? 0;
   const provenance =
@@ -178,16 +194,22 @@ export function LiveRecordPanel() {
             <span className="text-muted-foreground text-[10px]">
               {data.parlay_record.slips} SLIP{data.parlay_record.slips === 1 ? "" : "S"} LOGGED · GRADED ALL-OR-NOTHING · ONE PUBLIC PAPER SLIP PER DAY
             </span>
-            {/* The parlay table is the one whose grading basis changed. Saying
-                what these slips are made of is the disclosure that replaces
-                regrading them -- the record is reported, not corrected. */}
+            {/* The parlay table is the one whose grading basis changed. This
+                disclosure replaces regrading the rows -- but it may only state
+                what the rows actually evidence. An earlier version said these
+                slips "were settled at the −110 legs compounded", which was
+                false for every row graded before that became the fallback and
+                unknowable for a loss. The basis now comes from each row's own
+                stored payout, and a loss says so rather than being assigned to
+                whichever basis is convenient. */}
             {(data.parlay_record.fallback_graded ?? 0) > 0 && (
               <span className="w-full text-muted-foreground text-[10px] leading-4 normal-case">
                 {data.parlay_record.fallback_graded} of {data.parlay_record.graded} graded
-                slip{data.parlay_record.graded === 1 ? "" : "s"} had no book price recorded
-                and {data.parlay_record.fallback_graded === 1 ? "was" : "were"} settled at
-                the −110 legs compounded, the same fallback picks use. No sportsbook price
-                is recorded against any slip here.
+                slip{data.parlay_record.graded === 1 ? "" : "s"} had no book price recorded.
+                {parlayBasisSentence}{" "}
+                Slips settled from now on use the −110 legs compounded, the same fallback
+                picks use. No sportsbook price is recorded against any slip here, and no
+                graded row has been rewritten.
               </span>
             )}
           </div>

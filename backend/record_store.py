@@ -10,7 +10,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from backend.odds import parlay_book_decimal
+from backend.odds import decimal_odds, parlay_book_decimal
 from backend.precompute import MODEL_VERSION
 
 # The price a slip is graded at when no book line was recorded. Picks already
@@ -528,6 +528,36 @@ def grade_parlay(slip_id: int, leg_outcomes: dict[str, str]) -> bool:
         connection.commit()
     return True
 
+def _settled_basis(row: dict[str, Any]) -> str | None:
+    """Which basis actually settled this slip, read off the row itself.
+
+    Not derived from a date. The NULL-book_line fallback changed from the
+    slip's own `fair_line` to compounded -110 legs, but the deploy time of
+    that change is recorded nowhere, and partitioning the ledger on an
+    invented boundary would be the fabricated precision this module refuses
+    everywhere else. The stored payout is evidence; a guessed cutover is not.
+
+    A WIN distinguishes the two bases, because the payouts differ. A LOSS
+    does not -- it is -1.0 under either -- and that is reported as
+    indistinguishable rather than assigned to whichever basis is convenient.
+    """
+    if row["book_line"] is not None:
+        return "book_price"
+    if row["result"] not in ("WIN", "LOSS"):
+        return None
+    if row["result"] == "LOSS":
+        return "indistinguishable"
+    legs = row["legs"] or []
+    units = float(row["units_pnl"] or 0.0)
+    compounded = parlay_book_decimal([STANDARD_LEG_LINE] * len(legs)) - 1
+    retired = decimal_odds(row["fair_line"]) - 1
+    if abs(units - compounded) < 1e-6:
+        return "standard_-110_compounded"
+    if abs(units - retired) < 1e-6:
+        return "fair_line_retired"
+    return "unrecognised"
+
+
 def parlay_record() -> dict[str, Any]:
     with _connection() as connection:
         with connection.cursor() as cursor:
@@ -568,6 +598,16 @@ def parlay_record() -> dict[str, Any]:
         row["book_line"] is None and row["result"] in ("WIN", "LOSS")
         for row in rows
     )
+    # Counting the fallback rows is not the same as knowing how they settled.
+    # An earlier version of this disclosure told the reader they "were settled
+    # at the -110 legs compounded" -- false for every row graded before that
+    # became the fallback, and unknowable for a loss. Report the bases the
+    # rows actually evidence.
+    settled_bases: dict[str, int] = {}
+    for row in rows:
+        basis = _settled_basis(row)
+        if basis is not None:
+            settled_bases[basis] = settled_bases.get(basis, 0) + 1
     return {
         "slips": len(rows),
         "graded": wins + losses,
@@ -579,9 +619,11 @@ def parlay_record() -> dict[str, Any]:
         "model_versions_present": versions_present,
         "unversioned_slips": sum(row["model_version"] is None for row in rows),
         "fallback_graded": fallback_graded,
+        "settled_bases": settled_bases,
         "fallback_basis": (
-            "Slips with no recorded book price grade at the same −110 legs "
-            "compounded that picks fall back to."
+            "Slips with no recorded book price NOW grade at the same −110 "
+            "legs compounded that picks fall back to. Rows settled before "
+            "that are reported under their own basis rather than relabelled."
         ),
         "entries": [
             {
