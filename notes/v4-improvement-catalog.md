@@ -306,3 +306,363 @@ moneyline. F5 and totals are softer and better matched to what the chain already
 - **Freshness becomes correctness.** `verdict.py` already accepts `price_age_s` and
   currently omits it deliberately because prices are user-typed. With a feed it becomes
   real, and a 90-second-old price on a moving line is a wrong answer.
+
+---
+
+# Part II — The Model
+
+Three lanes, ranked internally, then ranked against each other. With the doctrine scratched,
+two categories that were previously forbidden are now open: **context signals may move
+prices** (§2.1 A0) and **any data source is fair game**.
+
+## Lane A — Better baseball modelling
+
+### A0. Let injuries, scratches, and lineups move the price — Lift 5, Effort M, 🎯🎲
+**Newly unlocked.** Previously prohibited outright: *"Media pulse and injury flags are
+disclosed context only; they NEVER move a price."* `get_injury_flags` (`feeds.py:1014`)
+already fetches IL status and the data reaches the UI as decoration.
+
+For a bettor this was the strangest thing about the product. A scratched ace is worth
+~2–4 points of win probability and is the most common reason a real line moves. A model that
+watches the starter get scratched and does not change its number is not a betting model.
+
+Implementation, in order of value:
+1. **Late scratch of a probable starter** → recompute the ADJ blend with the replacement.
+   The machinery exists (`_blended_side`, `feeds.py:862`); only the trigger is missing.
+2. **Key position player on the IL** → subtract their mWAA contribution from the team's
+   rates. `analytics.py:63-116` already computes exactly this per player.
+3. **Bullpen availability** → yesterday's usage, from game logs.
+
+Keep the disclosure. The old rule's *good* half was that the user could always see what
+moved a number; that survives as a receipt line ("−1.8 pts: Gerrit Cole scratched"), and it
+is a better feature with the price movement attached than without it.
+
+### A1. Home-field advantage — Lift 5, Effort M, 🎯🎲
+`log5_probability` (`odds.py:138-146`) is symmetric; there is no home term anywhere. MLB home
+teams win ~53–54% (measure it in the pitch-clock era, don't assume the old number).
+
+Fit the bump from data — a logistic on (strength differential, home indicator), or
+`p_home = log5(S_h, S_a) + δ` with δ fitted and versioned. Do not hardcode it; the
+"coefficients come from `load_models()`" rule is worth keeping for a reason unrelated to
+doctrine: hardcoded constants are how models silently rot.
+
+Cost: rewrites every price ever quoted. `MODEL_VERSION` (v3 Tier 3 item 2) has landed, so
+run it as a graded challenger before it becomes the headline number.
+
+### A2. Game-level backtest harness — Lift 5, Effort L, 🎯
+**Not a model improvement. The precondition for every model improvement here, and the gate
+on the +EV screener (M7).**
+
+Needs: historical game results (Retrosheet, Lahman, or MLB Stats API `/schedule` with
+`hydrate=linescore` back N seasons); team rate stats **as they stood on each game date**;
+walk-forward evaluation by season scored with log loss and Brier.
+
+The trap that invalidates most sports backtests: using end-of-season stats to "predict" an
+April game leaks the future into every prediction and produces a beautiful, fictional edge.
+Point-in-time reconstruction or nothing.
+
+Once M3/M5 exist, extend it to backtest against **closing lines**, which is the only test
+that matters: did the model beat the number?
+
+### A3. Refit RA off 90 rows — Lift 4, Effort M, 🎯
+`precompute.py:158` fits opponent-rates → RA on 1999–2001 (90 team-seasons) because
+`baseball.csv` has OOBP/OSLG for no earlier year. That sets the run-prevention half of every
+price. Source the full panel from Retrosheet/Lahman, or refit on modern data (A4). At
+minimum, disclose it.
+
+### A4. Refit on the modern run environment — Lift 4, Effort M, 🎯
+Training panel is 1962–2001. Since: the offensive spike and collapse, three-batter minimum,
+universal DH, shift ban, pitch clock, a juiced-then-dejuiced ball. OBP/SLG → runs is not
+era-invariant.
+
+With the doctrine scratched the counter-argument ("the 1962–2001 fit *is* the product's
+identity") loses most of its force — but not all of it, because the Moneyball provenance is
+genuinely good marketing. Resolution that keeps both: **ship two bundles**,
+`classic-1962-2001` and `modern-2012-2025`, as parallel graded challengers (B3), and let the
+ledger decide. The classic fit stays as the story and the teaching artifact; the modern fit
+prices the bets.
+
+### A5. Park factors — Lift 4, Effort M, 🎯🎲
+Not modeled at all. Two distinct corrections, and doing only the second double-counts:
+1. **Neutralize the inputs** — deflate a team's rates by its home park factor so the model
+   sees true talent, not Coors talent.
+2. **Re-inflate for the venue** — apply the *game's* park factor before Pythagorean.
+
+Derivable from MLB Stats API game logs, or take a published table with a citation.
+Essential for totals (M10), where park is the dominant term.
+
+### A6. Shrinkage on early-season rates — Lift 4, Effort M, 🎯
+`OBP_est = (n·OBP_obs + k·OBP_lg)/(n + k)`, with `k` fit from the historical variance
+decomposition rather than guessed. The verdict engine's `gp_hard_floor` gate
+(`verdict.py:117`) is the binary approximation; shrinkage is the continuous, correct version
+and lets the product say something useful in April with correctly widened uncertainty
+instead of refusing outright.
+
+Highest-integrity item in Lane A: it makes the model more honest *and* more useful, using
+only data already in hand.
+
+### A7. Bullpen modelling — Lift 4, Effort L, 🎯
+`_blended_side` (`feeds.py:862`) blends the starter's opponent rates against the team's,
+weighted by `IP/(GS×9)` clamped to [0.4, 0.8] (`analytics.py:191-196`). Everything after the
+starter exits is charged at the team season average — which *includes* the starter. The pen
+is simultaneously under-represented and double-counted.
+
+Correct: three-way blend — starter (projected IP), bullpen (remainder, relievers-only
+aggregates), and a rest/usage adjustment for a pen that threw four innings yesterday.
+Bullpen quality varies more between teams over a single game than rotation quality does.
+Probably the largest un-modelled real effect after home-field and park.
+
+### A8. Real lineups instead of team season rates — Lift 4, Effort L, 🎯🎲
+Lineups post 2–4 hours before first pitch. A team resting three regulars is a different
+offense. `_probable` (`feeds.py:960`) and the ~6h roster cache (`feeds.py:633`) are the
+starting points.
+
+Honest cost: creates a two-tier price (pre-lineup, post-lineup) and the ledger must record
+which one it graded. Pairs naturally with a lineup-drop push alert (Part III), which is
+worth as much in retention as in accuracy.
+
+### A9. Platoon splits and handedness — Lift 3, Effort L, 🎯
+A LHP against six left-handed bats is not the team's overall rates. Refinement of A8; do not
+attempt first.
+
+### A10. Pythagenpat — Lift 2, Effort S, 🎯
+`odds.py:131-135` hardcodes exponent 2. Pythagenpat uses `exp = ((RS+RA)/G)^0.287` — better
+at run-environment extremes, identical in the middle. Tiny effort. Also removes one of the
+two magic literals `v3-plan.md` flags (the other, the −110 overround at `main.py:557`, is a
+one-liner derivable from `market_vig(-110,-110)`).
+
+Caution: `smoke_test.py` pins the 2002 A's chain; this moves it. Needs a hand-checked
+replacement in `verified_stats.json` per CLAUDE.md.
+
+### A11. Separate defense from pitching — Lift 3, Effort L, 🎯
+OOBP/OSLG conflate pitcher and defense. Splitting them (DRS/OAA, or FIP-vs-ERA reasoning)
+makes the ADJ starter blend materially more accurate: the pitcher's component travels with
+the pitcher, the defense stays with the team.
+
+### A12. Statcast inputs — Lift 4, Effort L, 🎯
+xwOBA, barrel rate, exit velocity stabilize far faster than outcome stats and are more
+predictive at small samples — precisely MONEYLINE's April problem, and a partial substitute
+for A6. Available via `pybaseball` / Baseball Savant. Previously blocked by the keyless-only
+rule; now open.
+
+### A13. Weather, umpire, travel, rest, altitude — Lift 3, Effort M, 🎯
+Wind at Wrigley moves totals more than most model terms. Home-plate umpire zones vary
+measurably. West-to-east travel with no off day is documented. Individually small,
+collectively perhaps half a point of win probability — and considerably more on totals.
+
+The one real caution: these are small effects on small samples and **every one of them looks
+significant if you go looking.** Gate behind A2 with a pre-registered hypothesis, or skip.
+
+### A14. Catcher framing, baserunning, sequencing — Lift 1, Effort L
+Listed for completeness. Not before everything above is done and measured.
+
+---
+
+## Lane B — Modern ML method
+
+The estimators are fine. The methodology around them is what is missing.
+
+### B1. Walk-forward validation and proper scoring — Lift 5, Effort M, 🎯
+Today: one chronological split on the *season* models (`precompute.py:146-152`), nothing on
+game prices. Needed: season-by-season walk-forward CV scored with **log loss and Brier**,
+never hit rate.
+
+Hit rate is the metric that makes bad probability models look good — a model that says 55%
+on every game and goes 55% is perfectly calibrated and completely worthless. Log loss
+catches that. Every tout service in the world reports hit rate for exactly this reason.
+
+Same project as A2 viewed from the modelling side.
+
+### B2. Calibration as a first-class output — Lift 5, Effort M, 🎯
+Track Record already ships calibration buckets and Wilson intervals (`components/record/`).
+Turn that machinery inward onto model development: reliability curves on held-out seasons,
+plus an explicit calibration layer (Platt or isotonic) fit out-of-sample if the raw chain
+proves over- or under-confident.
+
+For a betting product this is not cosmetic. **Kelly consumes the probability directly**, so
+miscalibration does not merely cost accuracy — it mis-sizes every single bet, and
+over-confidence compounds into ruin faster than a bad edge does.
+
+### B3. Champion–challenger model registry — Lift 5, Effort M, 🎯
+Already practiced by hand: ADJ is a challenger graded alongside SEASON with the app refusing
+to claim it is better. Formalize it — N bundles, each with a `MODEL_VERSION`, each priced on
+every game, each graded independently, with a leaderboard reporting log loss, calibration,
+CLV, and units against a common baseline. Promotion happens on evidence.
+
+`MODEL_VERSION` is done, `model_version` is on all three ledger tables, `get_record` reports
+`model_versions_present`. This is a shorter step than it looks, and it is the mechanism that
+makes A1, A4, and every other price-moving change *safe to attempt at all*.
+
+### B4. Uncertainty intervals, not point estimates — Lift 4, Effort M, 🎯
+Every price is a point estimate. Team rates are estimated with error, coefficients are
+estimated with error, the model is estimated with error. Propagating that yields a credible
+interval on the fair price.
+
+Feeds directly into correct bet sizing: uncertainty should shrink stakes, and currently does
+not at all (see §3.2 — Kelly is uncapped). `_uncertainty` (`verdict.py:117`) is a heuristic
+over games-played and the season-vs-adjusted spread; a real posterior replaces it with
+something derived rather than tuned. `v3-plan.md` records that this heuristic's Moderate arm
+was ambiguous enough in the spec to require a judgment call — deriving it removes the
+ambiguity permanently.
+
+### B5. Gradient boosting / hierarchical Bayes — Lift 3, Effort L, 🎯
+The obvious "modernize the model" move, deliberately ranked below the boring items.
+
+Honest assessment: with ~2430 games a season into an efficient market, **the feature set
+matters far more than the estimator.** XGBoost on OBP and SLG will not beat linear regression
+on OBP and SLG by anything that survives a backtest. XGBoost on park-adjusted, shrunk,
+bullpen-aware, home-field-aware features might — but then Lane A did the work.
+
+A **hierarchical Bayesian team-strength model** is the more interesting choice for this
+product specifically: latent team strength with a prior, updated game by game. It gives B4's
+uncertainty natively and handles A6's shrinkage as a consequence of the prior rather than a
+bolted-on correction. Cost: it is much harder to explain, and the per-feature contribution
+receipts (`inference.py:64-81`) become SHAP values, which is a weaker claim to a user
+deciding whether to trust a number with their money.
+
+### B6. Ensemble SEASON and ADJ — Lift 3, Effort M, 🎯
+Today the user gets two numbers and no guidance, which is honest but unhelpful. Once the
+ledger can say which is better *and under what conditions* (starters confirmed? late season?
+wide spread?), output one price from a weighted blend with the weights derived from the
+record and disclosed. Requires real sample size; do not attempt early.
+
+### B7. Feature importance and ablation reporting — Lift 2, Effort S, 🎯
+Once A2 exists, running the chain with each feature ablated and reporting the log-loss delta
+is nearly free — and it is good content, because "here is what each input is actually worth"
+is both a research artifact and proof of the transparency claim.
+
+### B8. Retraining cadence and drift monitoring — Lift 3, Effort M, 🎯
+Coefficients are baked at build time (`precompute.py:186`) and loaded once
+(`inference.py:18-22`, `lru_cache`). Nothing detects that the run environment has drifted
+away from the fit. A scheduled job computing current-season residuals against model
+expectations, alerting on drift, is cheap insurance — and with a paid odds feed the same job
+should alert when model-vs-market divergence changes regime, which is usually a bug, not an
+edge.
+
+---
+
+## Lane C — Actual LLM features
+
+Ranked, with the framing the product should keep even without the doctrine:
+
+> **None of this creates predictive edge.** Not one Lane C item makes a price more accurate.
+> Lane C buys comprehension, retention, conversion, and research speed. Those are worth real
+> money — but marketing an LLM as a model improvement is the exact species of claim that,
+> when a sharp user catches it, costs the trust the record was built to earn.
+
+Model selection: `claude-sonnet-5` for interactive paths, `claude-haiku-4-5` for
+high-volume classification, `claude-opus-5` only where reasoning depth genuinely pays.
+
+### The guardrail that makes all of Lane C safe
+
+**The LLM never produces a number.** Every figure in generated prose must exist in a
+structured payload computed by the deterministic engine and passed in as context. Enforce
+mechanically: a post-generation validator extracts every numeral and asserts each appears in
+the source payload; on failure, return the deterministic text. Temperature 0.
+
+Without that validator, one hallucinated fair line destroys the receipts claim. With it,
+Lane C is safe throughout — and it is a two-hour piece of code.
+
+### C1. Reason bullets on every price — Lift 4, Effort M, 🎯🎲
+Highest-value Lane C item, and **mostly not an LLM feature.**
+
+`v3-plan.md` Tier 3 item 4 (`model_detail` on slate rows + `backend/explain.py`) is the
+deterministic core: `_chain_probability` discards the `predict_from_inputs` receipts, so
+there are no reason bullets anywhere. Build that first — the ranking design already exists
+in `notes/explain-design.md` (659 lines).
+
+The LLM's only job is turning `{feature, value, coefficient, contribution}` tuples into a
+sentence someone enjoys reading. `explain.py` without the LLM is a good feature. The LLM
+without `explain.py` is a hallucination machine.
+
+With A0 shipped, the highest-value bullet becomes the *movement* bullet: "−1.8 pts: Cole
+scratched" — the thing a bettor actually opens the app to find out.
+
+### C2. Chat with the desk — Lift 4, Effort L, 🎯🎲
+Tool-use over the 29 existing API routes. *"Who does the model like tonight?"* *"Why the
+Rays?"* *"Every game where we disagree with my book by more than 3 points."* *"What's my
+record on road favourites?"* *"Should I have taken that line?"*
+
+The most natural Pro-tier feature in the catalog: expensive per call, obviously valuable,
+cleanly gated by `has_feature` (`billing.py:59`), and it turns the existing API surface into
+product with almost no new backend. Every answer is grounded in a tool call, which enforces
+the guardrail structurally rather than by convention.
+
+### C3. News → structured signal, replacing the keyword lexicon — Lift 4, Effort M, 🎯
+The pulse lexicon (`analytics.py:26-35`) is a keyword matcher with defects recorded in
+`v3-plan.md`: "streak" and "losing streak" double-count, and `_matches` (`:282-285`) has a
+leading word boundary but no trailing one, so **"torn" matches "tornado"**.
+
+A small classifier is strictly better. And with A0, this graduates from decoration to a
+price input: extracting *"Cole scratched with forearm tightness"* from a beat-writer tweet
+30 minutes before the official transaction posts is a genuine, timing-based edge — one of
+the few places an LLM contributes real betting value rather than comprehension.
+
+That upgrade needs care: an LLM-extracted signal that moves money must be conservative,
+logged, and reversible, with a confidence floor below which it only disclosly rather than
+prices.
+
+### C4. Daily brief, written and delivered — Lift 4, Effort M, 🎯🎲
+One generated page each morning: the slate, biggest model-vs-market disagreements, what
+changed overnight, what the record did, what your open bets are doing. Email
+(`backend/mailer.py` exists) or push.
+
+The best answer to "why would I open this every day?", and the habit loop that makes a
+subscription renew. With M2 in place the disagreement ranking is real rather than
+model-vs-itself.
+
+### C5. Parlay critique in plain language — Lift 2, Effort S, 🎲
+The correlation refusal (`main.py:1001-1007`, doubleheader-extended in `bf1e7ab`) is correct
+and terse. An LLM explaining *why* correlated legs are mispriced, using the user's own slip,
+turns a rejection into a lesson. Good onboarding.
+
+### C6. Onboarding and jargon explainer — Lift 3, Effort S, 🎲
+"What is log5?" "What does −150 mean?" "What's CLV?" "Why is it refusing?" MONEYLINE's
+vocabulary is dense; this is the ramp from 🎲 to 🎯 and directly serves the on-ramp strategy
+in §0.4.
+
+### C7. Auto-generated SEO research content — Lift 2, Effort M, 🎲
+`seo_strategy.md` lists primary keywords as "Unknown". Per-team and per-matchup research
+pages would rank.
+
+Grudging: mass-generated content is a low-trust move and Google has gotten good at detecting
+it. If done, generate from real computed model output — which is genuinely unique data — and
+never from a prompt alone.
+
+### C8. Natural-language bet logging — Lift 2, Effort S, 🎲
+"Took the Rays −120 for two units" → structured ledger row. Convenience only, but it removes
+the friction that kills betting logs, and a dead log means a dead record.
+
+---
+
+## Part II ranked — all three lanes against each other
+
+| # | Item | Lane | Lift | Effort | Serves |
+|---|---|---|---|---|---|
+| 1 | **Game-level backtest harness** (A2/B1) | A+B | 5 | L | 🎯 |
+| 2 | **Injuries & scratches move the price** (A0) | A | 5 | M | 🎯🎲 |
+| 3 | **Home-field advantage** (A1) | A | 5 | M | 🎯🎲 |
+| 4 | **Calibration layer** (B2) | B | 5 | M | 🎯 |
+| 5 | **Champion–challenger registry** (B3) | B | 5 | M | 🎯 |
+| 6 | **Shrinkage on early rates** (A6) | A | 4 | M | 🎯 |
+| 7 | **Park factors** (A5) | A | 4 | M | 🎯🎲 |
+| 8 | **Refit RA off 90 rows** (A3) | A | 4 | M | 🎯 |
+| 9 | **Modern-era challenger bundle** (A4) | A | 4 | M | 🎯 |
+| 10 | **Statcast inputs** (A12) | A | 4 | L | 🎯 |
+| 11 | **Uncertainty intervals** (B4) | B | 4 | M | 🎯 |
+| 12 | **Bullpen modelling** (A7) | A | 4 | L | 🎯 |
+| 13 | **Reason bullets / `explain.py`** (C1) | C | 4 | M | 🎯🎲 |
+| 14 | **Chat with the desk** (C2) | C | 4 | L | 🎯🎲 |
+| 15 | **News classifier → price signal** (C3) | C | 4 | M | 🎯 |
+| 16 | **Daily brief** (C4) | C | 4 | M | 🎯🎲 |
+| 17 | Real lineups (A8) → platoons (A9) | A | 4/3 | L | 🎯🎲 |
+| 18 | Weather/umpire/travel (A13) | A | 3 | M | 🎯 |
+| 19 | Drift monitoring (B8) | B | 3 | M | 🎯 |
+| 20 | Defense/pitching split (A11) | A | 3 | L | 🎯 |
+| 21 | Ensemble SEASON/ADJ (B6) | B | 3 | M | 🎯 |
+| 22 | Boosting / hierarchical Bayes (B5) | B | 3 | L | 🎯 |
+| 23 | Onboarding explainer (C6) | C | 3 | S | 🎲 |
+| 24 | Pythagenpat (A10) | A | 2 | S | 🎯 |
+| 25 | Everything else | — | 1–2 | — | — |
+
+**Item 1 is worth more than items 6–25 combined**, and it is not a model change.
