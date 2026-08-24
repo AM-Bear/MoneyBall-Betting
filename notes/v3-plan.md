@@ -36,23 +36,28 @@ ALTER not CREATE, and `moneyline_slate_snapshots` is never created by any code.
 
 The graded record is the product's honesty claim. It has three defects.
 
-1. **`entered_line` is never written.** Read at `record_store.py:182,194,253`; no writer
-   exists in `backend/`. `line = ... else -110` always takes the default, so every pick is
-   graded at a flat −110 instead of the model's own fair line. Tests seed the column
-   directly (`conftest.py:146`), which is why the suite is green.
-   **OPEN DECISION (Asher):** what to do with rows already graded at −110. Options: leave
-   them; regrade (violates append-only + terminal grades); or mark them as a distinct era.
-   Recommendation: mark the era, never rewrite a row. *Not yet decided — do not touch
-   existing rows without an explicit answer.*
-2. **Any date can enter the ledger.** `/api/slate?date=` flows to persistence at
+1. **`entered_line` — NOT A BUG. Reframed 2026-08-24, do not "fix" it.** The column is
+   read at `record_store.py:182,194,253` and written nowhere, so picks grade at the −110
+   default. That is **correct**: MONEYLINE ingests no odds provider (verified — zero
+   sportsbook references in `backend/`), and the UI states it outright
+   (`presentation-preferences.tsx:64`, "Book price = your manual input"). There is no market
+   line to record. Writing `entered_line = fair_line` would grade every pick as if you got
+   the model's own price — systematically optimistic, and exactly the fake precision the
+   doctrine forbids. `entered_line` is an unimplemented *manual-entry* feature.
+   Rows already graded at −110 are internally consistent. No era marking, no regrade.
+   **The real defect is the asymmetry:** parlays fall back to `fair_line`
+   (`record_store.py:409`) while picks fall back to −110. Two honesty standards, and the
+   parlay side is the optimistic one. OPEN DECISION (Asher) — fixing it changes historical
+   parlay results.
+2. ✅ **FIXED (7137c05). Any date can enter the ledger.** `/api/slate?date=` flows to persistence at
    `main.py:601-618`; the only guard is `mode == "live"` (also re-checked
    `record_store.py:70`). No date or status check. `ON CONFLICT (snapshot_date) DO NOTHING`
    caps it at one row per date. Urgent because a Today date bar makes this user-reachable.
-3. **Silent initials fallback** at `feeds.py:208`. An MLB team rename would diverge stored
+3. ✅ **FIXED (7137c05). Silent initials fallback** at `feeds.py:208`. An MLB team rename would diverge stored
    vs. derived codes and grade every affected pick LOSS, with no signal. One
    `logger.warning` closes it.
 
-**Also in Tier 1 — the prerequisite for Tier 3.** No test computes an actual game price:
+✅ **DONE (c681238). Also in Tier 1 — the prerequisite for Tier 3.** No test computes an actual game price:
 `_chain_probability`, `_blended_side`, `_price_game`, the SEASON→ADJ path, and the
 hitter-vs-pitcher boundary payload all have zero coverage. Build an end-to-end price
 integration test here. Tier 3's risky items cannot be verified without it.
@@ -64,17 +69,27 @@ would pass.
 
 ## TIER 2 — Dead and broken
 
-- **`get_news()` raises `NameError` on every call.** `RSS_URL`, `ESPN_NEWS_URL`, `_espn_dead`
+- ✅ **FIXED (a62416b). `get_news()` raised `NameError` on every call.** `RSS_URL`, `ESPN_NEWS_URL`, `_espn_dead`
   are referenced at `feeds.py:488,506-509,530` and defined nowhere (verified by import).
   MLB RSS headlines have never worked in v2; undefined since a2780cd, not a regression.
   `wire.py:102-109` swallows it, so it surfaces only as `sources_up.news = false`. The
-  intended URL is in `notes/mlb_api_transcripts.md:127`.
-- **Slow API has no ceiling.** A *dead* MLB API degrades gracefully (historical_slate
+  intended URL is in `notes/mlb_api_transcripts.md:127` and re-verified live 2026-08-24.
+  **ESPN discovery:** ESPN is not down — *we* are blocked. It returns 403 to
+  `USER_AGENT = "MONEYLINE/1.0 (statistical research terminal)"` and 200 to httpx's
+  default (isolated header by header, recorded §9b). The silent-skip path now genuinely
+  executes, but it latches off for a reason we cause. **Deliberately not fixed:**
+  `USER_AGENT` is shared with every `statsapi.mlb.com` call, and unblocking ESPN would add
+  headlines to the merged wire and move every team's media-pulse score — a visible product
+  change. OPEN DECISION (Asher).
+- ✅ **FIXED (c565770). Slow API had no ceiling.** A *dead* MLB API degrades gracefully (historical_slate
   fallback); a *slow* one does not. No request deadline anywhere; ~20.25s per logical fetch;
-  `get_rosters` fans 30 calls at concurrency 5 (~120s); `AsyncTTLCache` holds its per-key
-  lock for the whole loader (`feeds.py:98-105`), so concurrent `/api/slate` requests queue
-  behind the first. Multi-minute app-wide hang.
-- **Doubleheader parlay mispricing.** Same-game refusal keys on `gamePk` only
+  `get_rosters` fans 30 calls at concurrency 5 (~120s); `AsyncTTLCache` held its per-key
+  lock for the whole loader, so concurrent `/api/slate` requests queued behind the first.
+  Fixed by bounding the wait, **not** by dropping single-flight — dropping the lock would
+  let each concurrent request fan out its own roster sweep. The loader is now a shielded
+  shared task with a `FEED_DEADLINE_SECONDS` (25s) deadline; stale is served on timeout,
+  and only with nothing cached does `FeedUnavailable` reach `historical_slate`.
+- ✅ **FIXED (bf1e7ab + f0ef5b2). Doubleheader parlay mispricing.** Same-game refusal keys on `gamePk` only
   (`main.py:1001-1007`). A doubleheader is two gamePks with the same two teams, so
   correlated legs pass the independence check and get multiplied as independent.
 - **Playoff logistic leaks unflagged.** ✅ FIXED on `tier2-logistic-flag`. Every
@@ -96,6 +111,20 @@ would pass.
   hardcodes the −110 overround that `market_vig(-110,-110)` already derives; the
   Pythagorean exponent 2 is duplicated at `odds.py:133-134`, `players.py:119-121`,
   `players.py:187-189`.
+
+## STATUS — 2026-08-24
+
+Tier 1 and Tier 2 are complete on branch `tier2-integration` (off `main`, unmerged).
+`smoke_test.py` green; pytest **2 failed / 92 passed**, up from 51, with the same two
+pre-existing `tests/test_serve_spa.py` failures throughout (uncommitted frontend `dist/`).
+
+Verified against the running Replit api-server after every merge: health OK,
+`sources_up.news` now `true` for the first time, and slate prices byte-identical
+(`TBR @ DET` 110/−110, `BOS @ MIA` 105/−105, `COL @ WSN` −150/150). Four changes to the
+live pricing path, zero movement in any price.
+
+Two decisions parked for Asher: the ESPN User-Agent, and the parlay/pick grading
+fallback asymmetry.
 
 ## TIER 3 — v3 build, in dependency order
 
