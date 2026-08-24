@@ -163,6 +163,29 @@
         "TBR",
         "WSN"
       ]
+    },
+    "verdict_checks": {
+      "sigma": 0.04,
+      "fixture_1": {
+        "probability": 0.58,
+        "price": -115,
+        "implied": 0.534884,
+        "edge": 0.045116,
+        "ev_per_unit": 0.084348,
+        "gap": 1.1279,
+        "verdict": "BET_CANDIDATE",
+        "signal": "Strong"
+      },
+      "fixture_6": {
+        "probability": 0.58,
+        "price": -130,
+        "implied": 0.565217,
+        "edge": 0.014783,
+        "ev_per_unit": 0.026154,
+        "gap": 0.3696,
+        "verdict": "MARGINAL_VALUE",
+        "signal": "Weak"
+      }
     }
   }
 }

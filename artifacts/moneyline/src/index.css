@@ -238,6 +238,41 @@
   .game-card-price-block {
     @apply flex shrink-0 flex-col gap-1 rounded-xl border border-border bg-background/60 px-3 py-2 sm:min-w-[118px] sm:text-right;
   }
+  /* Verdict slot. Never colour alone: every state pairs an icon with
+     sentence-case text, and the pill carries an aria-label naming the side. */
+  .game-card-verdict {
+    @apply inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-medium;
+  }
+  .game-card-verdict-candidate {
+    @apply border-success/30 bg-success/10 text-success;
+  }
+  .game-card-verdict-marginal {
+    @apply border-primary/30 bg-primary/10 text-primary;
+  }
+  .game-card-verdict-none {
+    @apply border-border bg-muted/40 text-muted-foreground;
+  }
+  .game-card-verdict-avoid {
+    @apply border-destructive/30 bg-destructive/10 text-destructive;
+  }
+  .game-card-verdict-data {
+    @apply border-warning/30 bg-warning/5 text-warning;
+  }
+  .game-card-verdict-frozen {
+    @apply border-border bg-muted/40 text-muted-foreground;
+  }
+  .game-card-takeaway {
+    @apply mt-2 text-sm leading-6 text-muted-foreground;
+  }
+  .game-card-verdict-conflict {
+    @apply mt-2 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs font-medium leading-5 text-warning;
+  }
+  .game-card-price-row {
+    @apply mt-3 flex flex-wrap items-end gap-3;
+  }
+  .game-card-price-field {
+    @apply flex min-w-[132px] flex-1 flex-col gap-1;
+  }
   .game-card-summary {
     @apply border-t border-border/70 px-5 py-4;
   }

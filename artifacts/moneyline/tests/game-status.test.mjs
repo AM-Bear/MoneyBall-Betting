@@ -53,3 +53,18 @@ test("postponed and suspended games never expose a manual price verdict", () => 
     assert.equal(gameStatus.isNonPlayableGame(game), true);
   }
 });
+test("the evaluate status enum is derived from the same predicates", () => {
+  const cases = [
+    ["Scheduled", "scheduled"],
+    ["Pre-Game", "scheduled"],
+    ["In Progress", "live"],
+    ["Delayed", "live"],
+    ["Final", "final"],
+    ["Game Over", "final"],
+    ["Postponed", "postponed"],
+    ["Suspended", "postponed"],
+  ];
+  for (const [status, expected] of cases) {
+    assert.equal(gameStatus.evaluationStatus({ ...scheduledGame, status }), expected, status);
+  }
+});

@@ -237,6 +237,117 @@ export function useWire(team: string | null, types: string[], limit = 120) {
   });
 }
 
+// ---- v3: game-level verdict ----
+
+export type EvaluateStatus = 'scheduled' | 'live' | 'final' | 'postponed';
+
+export type VerdictCode =
+  | 'BET_CANDIDATE'
+  | 'MARGINAL_VALUE'
+  | 'NO_VALUE'
+  | 'AVOID_AT_THIS_PRICE'
+  | 'INSUFFICIENT_DATA';
+
+export type VerdictFlag =
+  | 'no_price'
+  | 'early_season'
+  | 'stale'
+  | 'starters_unconfirmed'
+  | 'small_sample'
+  | 'prices_disagree'
+  /** Games played could not be resolved. Distinct from `early_season`, which
+   *  is a claim about the season; this is a claim about our own data. */
+  | 'gp_unavailable';
+
+export interface EvaluatePayload {
+  /** Required, 0 < p < 1. Away is derived as 1 - p by the API. */
+  p_season_home: number;
+  p_adj_home?: number | null;
+  price_home?: number | null;
+  price_away?: number | null;
+  /** null gates the verdict to INSUFFICIENT_DATA (gp_unavailable) — never guess. */
+  gp_home?: number | null;
+  gp_away?: number | null;
+  starters_confirmed?: boolean;
+  /** Omitted for user-typed prices: there is no feed, so there is no age to claim. */
+  price_age_s?: number | null;
+  status?: EvaluateStatus;
+  book?: string | null;
+}
+
+export interface EvaluateSide {
+  p_eval: number;
+  p_basis: 'adj' | 'season';
+  p_season: number;
+  p_adj: number | null;
+  price: number | null;
+  chance_lose: number;
+  fair_line: number | null;
+  implied: number | null;
+  breakeven: number | null;
+  edge_pts: number | null;
+  ev_per_100: number | null;
+  verdict: VerdictCode | null;
+  verdict_reason: string | null;
+  signal: 'Strong' | 'Moderate' | 'Weak' | null;
+  signal_provisional: boolean | null;
+  gap: number | null;
+  volatility: 'Lower' | 'Typical' | 'Higher' | null;
+  uncertainty: 'Low' | 'Moderate' | 'High';
+  agree: boolean | null;
+  flags: VerdictFlag[];
+  basis_note: string | null;
+  raw?: { edge: number; ev: number; implied: number; gap: number };
+}
+
+export interface EvaluateThresholds {
+  avoid_ev: number;
+  no_value_edge: number;
+  candidate_ev: number;
+  candidate_edge: number;
+  sigma: number;
+  stale_seconds: number;
+  gp_hard_floor: number;
+  gp_small_sample: number;
+  gp_moderate: number;
+  signal_provisional_n: number;
+  signal_strong_gap: number;
+  signal_moderate_gap: number;
+  volatility_lower_price: number;
+  volatility_higher_price: number;
+  uncertainty_high_basis_spread: number;
+  uncertainty_moderate_basis_spread: number;
+  sigma_is_provisional: boolean;
+  notes: Record<string, string>;
+}
+
+export interface EvaluateResponse {
+  sides: { home: EvaluateSide; away: EvaluateSide };
+  game: {
+    side: 'home' | 'away' | null;
+    verdict: VerdictCode | null;
+    verdict_reason: string | null;
+    lean_side: 'home' | 'away' | null;
+    lean_differs_from_value: boolean;
+    avoid_note: string | null;
+    frozen: boolean;
+    status: EvaluateStatus;
+    book: string | null;
+    takeaway: string | null;
+  };
+  sample: { gp_home: number | null; gp_away: number | null; label: string };
+  thresholds: EvaluateThresholds;
+  model_version?: string;
+  caveat?: string;
+}
+
+export function useEvaluate() {
+  return useMutation({
+    mutationFn: (payload: EvaluatePayload) =>
+      fetchApi<EvaluateResponse>('/evaluate', { method: 'POST', body: JSON.stringify(payload) }),
+  });
+}
+
 export function useGradeRecord() {
   const queryClient = useQueryClient();
   return useMutation({

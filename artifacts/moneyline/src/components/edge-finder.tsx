@@ -5,18 +5,7 @@ import { formatOdds, formatProb } from "./slate-rail";
 import { useMatchup, useTeamPrice, useTeams } from "@/api";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-
-function parseMoneyline(value: string): number | null {
-  const trimmed = value.trim();
-  if (!trimmed || !/^[+-]?\d+$/.test(trimmed)) return null;
-  return Number(trimmed);
-}
-
-function isMalformedMoneyline(value: string): boolean {
-  if (!value.trim()) return false;
-  const parsed = parseMoneyline(value);
-  return parsed === null || parsed === 0 || Math.abs(parsed) < 100;
-}
+import { isMalformedMoneyline, parseMoneyline } from "@/lib/moneyline";
 
 export function EdgeFinder({
   teamAStats,

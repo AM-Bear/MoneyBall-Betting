@@ -34,6 +34,7 @@ from backend.odds import (
     pythagorean_strength,
 )
 from backend.precompute import build_artifacts
+from backend.verdict import evaluate as evaluate_verdict
 from backend.season_sim import simulate_season
 
 
@@ -309,6 +310,41 @@ def v2_tests(artifacts: dict) -> None:
     # Fixture has 2 divisions per league: 2 winners + 3 wild cards = 5 spots each.
     total_playoff = sum(r["playoff_odds"] for r in first.values())
     assert_close(total_playoff, 10.0, 0.01, "12-team fixture: 5 playoff spots per league")
+
+    # 8. Verdict engine: the hand-checked Appendix A arithmetic.
+    # Green tests prove no regression against known values; they do not prove
+    # new math is right. These two cases were worked by hand first (the
+    # derivation is in verified_stats.json's comment history) and only then
+    # confirmed against odds.py, so they are ground truth rather than a
+    # snapshot of whatever the code happens to do.
+    with open(model_setup.paths["verified_stats.json"], encoding="utf-8") as file:
+        checks = json.load(file)["verdict_checks"]
+    for name in ("fixture_1", "fixture_6"):
+        case = checks[name]
+        result = evaluate_verdict(
+            p_season_home=case["probability"],
+            p_adj_home=case["probability"],
+            price_home=case["price"],
+            gp_home=126,
+            gp_away=126,
+            starters_confirmed=True,
+        )
+        side = result["sides"]["home"]
+        assert_close(side["raw"]["implied"], case["implied"], 1e-6, f"{name} implied")
+        assert_close(side["raw"]["edge"], case["edge"], 1e-6, f"{name} edge")
+        assert_close(side["raw"]["ev"], case["ev_per_unit"], 1e-6, f"{name} EV per unit")
+        assert_close(side["raw"]["gap"], case["gap"], 1e-4, f"{name} signal gap")
+        assert side["verdict"] == case["verdict"], f"{name} verdict"
+        assert side["signal"] == case["signal"], f"{name} signal"
+    # The engine composes odds.py rather than re-deriving it: the edge it
+    # reports must equal edge_probability to the last bit, not merely round
+    # to the same display value.
+    assert (
+        evaluate_verdict(
+            p_season_home=0.58, price_home=-115, gp_home=126, gp_away=126
+        )["sides"]["home"]["raw"]["edge"]
+        == edge_probability(0.58, -115)
+    ), "verdict edge must be odds.edge_probability exactly"
 
     print("v2 passed: mWAA receipts, runs/win, parlay math, blends, pulse, and the seeded sim.")
 

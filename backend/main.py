@@ -54,6 +54,7 @@ from backend.odds import (
     pythagorean_strength,
 )
 from backend.players import build_player_card, compare_players, search_players
+from backend.precompute import MODEL_VERSION
 from backend.record_store import (
     database_available,
     ensure_schema,
@@ -75,6 +76,7 @@ from backend.seo import (
     render_index,
     sitemap_xml,
 )
+from backend.verdict import evaluate as evaluate_verdict
 from backend.wire import get_team_pulse, get_wire
 
 
@@ -152,6 +154,53 @@ class MatchupInput(BaseModel):
         for line in (self.book_line_a, self.book_line_b):
             if line == 0 or (line is not None and abs(line) < 100):
                 raise ValueError("American moneylines must be ≤ −100 or ≥ +100.")
+        return self
+
+
+class EvaluateInput(BaseModel):
+    """Both sides of one game, priced by the caller.
+
+    Two prices, not one. A single-price endpoint would reproduce the exact
+    one-sidedness this engine exists to fix -- the card currently evaluates
+    the away team only, so a favourable home price is never surfaced.
+
+    Only home probabilities are accepted; away is derived as 1 - p_home,
+    matching `_price_game` and `/api/matchup`. Taking both would let a caller
+    submit an incoherent pair.
+    """
+
+    p_season_home: float = Field(gt=0, lt=1)
+    p_adj_home: float | None = Field(default=None, gt=0, lt=1)
+    price_home: int | None = None
+    price_away: int | None = None
+    gp_home: int | None = Field(default=None, ge=0)
+    gp_away: int | None = Field(default=None, ge=0)
+    starters_confirmed: bool = False
+    # Meaningful only once an odds feed exists. MONEYLINE ingests none, so
+    # every price arriving here is user-typed and this stays null: an age
+    # synthesised from request arrival would be a fabricated freshness claim.
+    price_age_s: float | None = Field(default=None, ge=0)
+    status: Literal["scheduled", "live", "final", "postponed"] = "scheduled"
+    book: str | None = Field(default=None, max_length=64)
+
+    @model_validator(mode="after")
+    def validate_lines(self) -> "EvaluateInput":
+        for line in (self.price_home, self.price_away):
+            if line == 0 or (line is not None and abs(line) < 100):
+                raise ValueError("American moneylines must be ≤ −100 or ≥ +100.")
+        # The away side is derived as 1 - p_home. `gt=0, lt=1` on the field is
+        # not enough: for p ≤ ~1e-16 the complement is exactly 1.0 in float64,
+        # and probability_to_moneyline(1.0) raises -- turning a validation
+        # problem into a 500. Reject it here so the refusal is a 400 with the
+        # rest of the input errors, which is what the route docstring promises.
+        for probability in (self.p_season_home, self.p_adj_home):
+            if probability is None:
+                continue
+            if not 0 < 1 - probability < 1:
+                raise ValueError(
+                    "Probabilities must leave a representable complement "
+                    "strictly between 0 and 1."
+                )
         return self
 
 
@@ -446,7 +495,7 @@ async def health(request: Request) -> dict[str, Any]:
         "model_loaded": bool(getattr(request.app.state, "model_loaded", False)),
         "startup_ms": getattr(request.app.state, "startup_ms", None),
         "database_ready": await asyncio.to_thread(database_available),
-        "model_version": "chronological-1962-2001-v1",
+        "model_version": MODEL_VERSION,
     }
 
 
@@ -605,6 +654,41 @@ async def matchup(payload: MatchupInput) -> dict[str, Any]:
         "receipts": {"team_a": team_a["receipts"], "team_b": team_b["receipts"]},
         "caveat": EQUITY_CAVEAT,
     }
+
+
+@app.post("/api/evaluate")
+async def evaluate_game(payload: EvaluateInput) -> dict[str, Any]:
+    """Appendix A verdict: is there value at this price, and on which side?
+
+    The successor to `/api/matchup`'s verdict block, and deliberately not a
+    replacement for it. `/api/matchup` keeps its one-sided `evaluation_side`
+    contract and its vig-relative threshold for the historical Matchups tool
+    and H2H; this endpoint uses Appendix A's absolute thresholds and always
+    scores both sides. Two rulesets coexist by design -- mixing them silently
+    is the most likely way this ships wrong.
+
+    Every degenerate input is either a validation error or a gated
+    INSUFFICIENT_DATA payload at 200. Nothing here raises MoneylineError,
+    because a refusal is a result, not an error.
+    """
+    result = evaluate_verdict(
+        p_season_home=payload.p_season_home,
+        p_adj_home=payload.p_adj_home,
+        price_home=payload.price_home,
+        price_away=payload.price_away,
+        gp_home=payload.gp_home,
+        gp_away=payload.gp_away,
+        starters_confirmed=payload.starters_confirmed,
+        price_age_s=payload.price_age_s,
+        status=payload.status,
+        book=payload.book,
+    )
+    # Attached here rather than inside verdict.py, which imports only
+    # backend.odds so the no-context-signals doctrine stays checkable by
+    # inspection.
+    result["model_version"] = MODEL_VERSION
+    result["caveat"] = EQUITY_CAVEAT
+    return result
 
 
 @app.get("/api/slate")
