@@ -161,5 +161,36 @@ export default defineConfig(async ({ command, isPreview }) => ({
   build: {
     outDir: path.resolve(import.meta.dirname, 'dist/public'),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+
+          // Charts are only needed by the record/backtest panels. Keep
+          // Recharts and its D3 modules out of the initial desk entry.
+          if (
+            id.includes('/recharts/') ||
+            id.includes('/d3-') ||
+            id.includes('/internmap/')
+          ) {
+            return 'charts';
+          }
+
+          // Radix primitives are shared by panels, but are not required to
+          // paint the first shell. Group them so they load independently.
+          if (id.includes('/@radix-ui/')) return 'radix';
+
+          if (
+            id.includes('/lucide-react/') ||
+            id.includes('/react-icons/') ||
+            id.includes('/framer-motion/')
+          ) {
+            return 'ui-vendor';
+          }
+
+          return undefined;
+        },
+      },
+    },
   },
 }));
