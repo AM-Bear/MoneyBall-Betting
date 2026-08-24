@@ -84,25 +84,87 @@ class GameNotFound(FeedUnavailable):
 
 
 class AsyncTTLCache:
-    def __init__(self, ttl_seconds: int) -> None:
+    """Single-flight TTL cache with a bounded wait.
+
+    Only one loader runs per key — without that, a cold ``/api/slate`` would let
+    every concurrent request fan out its own 30-call roster sweep. But a caller
+    must never be pinned to however long the upstream takes: ``FEED_TIMEOUT_SECONDS``
+    (10s) applies per HTTP request, and a logical fetch retries once, so a slow
+    (not dead) MLB API can stack up past two minutes behind one loader. A dead API
+    degrades cleanly via ``historical_slate``; a slow one used to hang the app.
+
+    So the loader runs as a shared task and callers wait on it with a deadline:
+
+    * The task is **shielded**, so a caller giving up does not cancel work the
+      next caller would benefit from — it keeps running and populates the cache.
+    * On deadline, stale data is served if any exists (better a slightly old
+      slate than none), otherwise ``FeedUnavailable`` propagates and the existing
+      ``historical_slate`` fallback takes over.
+    """
+
+    def __init__(self, ttl_seconds: int, deadline_seconds: float | None = None) -> None:
         self.ttl_seconds = ttl_seconds
+        self.deadline_seconds = (
+            deadline_seconds
+            if deadline_seconds is not None
+            else float(os.getenv("FEED_DEADLINE_SECONDS", "25"))
+        )
         self._items: dict[str, tuple[float, Any]] = {}
-        self._locks: dict[str, asyncio.Lock] = {}
+        self._inflight: dict[str, asyncio.Task[Any]] = {}
+
+    def _fresh(self, key: str) -> tuple[Any, bool] | None:
+        cached = self._items.get(key)
+        if cached and time.monotonic() - cached[0] < self.ttl_seconds:
+            return cached[1], True
+        return None
+
+    async def _load(self, key: str, loader: Callable[[], Awaitable[Any]]) -> Any:
+        try:
+            value = await loader()
+            self._items[key] = (time.monotonic(), value)
+            return value
+        finally:
+            self._inflight.pop(key, None)
 
     async def get_or_set(
         self, key: str, loader: Callable[[], Awaitable[Any]]
     ) -> tuple[Any, bool]:
-        cached = self._items.get(key)
-        if cached and time.monotonic() - cached[0] < self.ttl_seconds:
-            return cached[1], True
-        lock = self._locks.setdefault(key, asyncio.Lock())
-        async with lock:
-            cached = self._items.get(key)
-            if cached and time.monotonic() - cached[0] < self.ttl_seconds:
-                return cached[1], True
-            value = await loader()
-            self._items[key] = (time.monotonic(), value)
+        hit = self._fresh(key)
+        if hit is not None:
+            return hit
+
+        task = self._inflight.get(key)
+        if task is None or task.done():
+            # Re-check under no await: whoever gets here first owns the load.
+            hit = self._fresh(key)
+            if hit is not None:
+                return hit
+            task = asyncio.ensure_future(self._load(key, loader))
+            self._inflight[key] = task
+
+        try:
+            value = await asyncio.wait_for(
+                asyncio.shield(task), timeout=self.deadline_seconds
+            )
             return value, False
+        except asyncio.TimeoutError:
+            stale = self._items.get(key)
+            if stale is not None:
+                logger.warning(
+                    "feed_deadline_serving_stale key=%s deadline=%.1fs age=%.1fs",
+                    key,
+                    self.deadline_seconds,
+                    time.monotonic() - stale[0],
+                )
+                return stale[1], True
+            logger.warning(
+                "feed_deadline_no_stale key=%s deadline=%.1fs — degrading",
+                key,
+                self.deadline_seconds,
+            )
+            raise FeedUnavailable(
+                f"{key} exceeded the {self.deadline_seconds:.0f}s feed deadline"
+            ) from None
 
 
 cache = AsyncTTLCache(int(os.getenv("CACHE_TTL_SECONDS", "600")))
