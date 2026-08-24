@@ -5,12 +5,22 @@ import { useTeams, useTeamsLive } from "@/api";
 import { usePlayerHits } from "./player-search";
 
 export const TABS = [
-  { label: "DESK", path: "/" },
-  { label: "PLAYERS", path: "/players" },
-  { label: "H2H", path: "/h2h" },
-  { label: "PARLAY", path: "/parlay" },
-  { label: "SEASON", path: "/season" },
-  { label: "WIRE", path: "/wire" },
+  { label: "Today", path: "/" },
+  { label: "Research", path: "/research" },
+  { label: "Track record", path: "/track-record" },
+  { label: "Desk", path: "/desk" },
+  { label: "Parlay check", path: "/parlay" },
+  { label: "Settings", path: "/settings" },
+] as const;
+
+/** Original 1–6 Desk shortcuts remain stable during the shell migration. */
+export const LEGACY_SHORTCUTS = [
+  { path: "/desk" },
+  { path: "/players" },
+  { path: "/h2h" },
+  { path: "/parlay" },
+  { path: "/season" },
+  { path: "/wire" },
 ] as const;
 
 function formatUpdatedAt(isoString?: string) {
@@ -204,27 +214,26 @@ export function CommandBar({
   return (
     <header className="border-b border-border bg-card px-4 py-2 flex items-center justify-between gap-4 sticky top-0 z-40 flex-wrap">
       <div className="flex items-center gap-4 flex-wrap">
-        <div className="font-bold tracking-widest uppercase flex items-center gap-2">
+         <div className="font-bold tracking-tight flex items-center gap-2 shrink-0">
           <span>MONEYLINE</span>
-          <span className="text-success text-xs">◆</span>
+           <span className="text-success text-xs" aria-label="MONEYLINE is available">●</span>
         </div>
 
-        <nav className="flex items-center" aria-label="Primary tabs">
+         <nav className="flex items-center gap-1 overflow-x-auto" aria-label="Primary navigation">
           {TABS.map((tab, i) => {
             const active = tab.path === "/" ? location === "/" : location.startsWith(tab.path);
             return (
               <Link
                 key={tab.path}
                 href={tab.path}
-                className={cn(
-                  "px-2.5 py-1 text-xs font-mono uppercase tracking-wider border-b-2 transition-colors",
+                 className={cn(
+                   "px-2.5 py-1.5 text-xs border-b-2 transition-colors whitespace-nowrap",
                   active
                     ? "border-primary text-primary"
                     : "border-transparent text-muted-foreground hover:text-foreground",
                 )}
                 aria-current={active ? "page" : undefined}
               >
-                <span className="hidden md:inline text-[9px] text-muted-foreground/60 mr-1">{i + 1}</span>
                 {tab.label}
               </Link>
             );
@@ -234,7 +243,7 @@ export function CommandBar({
         <OmniSearch />
       </div>
 
-      <div className="flex items-center gap-4 text-xs font-mono text-muted-foreground">
+       <div className="flex items-center gap-3 text-xs text-muted-foreground shrink-0">
         {updatedTime && <span className="hidden sm:inline">{updatedTime}</span>}
         <div className="flex items-center gap-2 border border-border px-2 py-1 bg-background">
           <span className={cn(
@@ -242,11 +251,11 @@ export function CommandBar({
             slateStatus === "LIVE" ? "bg-success animate-pulse" :
             slateStatus === "HISTORICAL" ? "bg-warning" : "bg-destructive"
           )} />
-          <span className={cn(
-            "tracking-wider",
+           <span className={cn(
+             "tracking-wide",
             slateStatus === "LIVE" ? "text-success" :
             slateStatus === "HISTORICAL" ? "text-warning" : "text-destructive"
-          )}>{slateStatus}</span>
+           )}>{slateStatus === "LIVE" ? "Live" : slateStatus === "HISTORICAL" ? "Historical" : "Unavailable"}</span>
         </div>
       </div>
     </header>

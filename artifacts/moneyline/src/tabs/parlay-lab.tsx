@@ -40,40 +40,6 @@ function sideProb(game: any, side: Side): number | null {
   return side === "home" ? game.model_prob_home : 1 - game.model_prob_home;
 }
 
-/** Best 2–3 leg combo by EV at standard −110 pricing — receipts, no urgency. */
-function computeModelSlip(games: any[]): { legs: Leg[]; prob: number; ev: number; bookLine: number } | null {
-  const candidates = games
-    .map((g) => {
-      const pHome = g.model_prob_home;
-      if (pHome == null) return null;
-      const side: Side = pHome >= 0.5 ? "home" : "away";
-      return { gamePk: String(g.game_pk), side, p: Math.max(pHome, 1 - pHome) };
-    })
-    .filter((c): c is { gamePk: string; side: Side; p: number } => c !== null);
-  if (candidates.length < 2) return null;
-
-  let best: { legs: Leg[]; prob: number; ev: number; bookLine: number } | null = null;
-  const consider = (combo: typeof candidates) => {
-    const prob = combo.reduce((acc, c) => acc * c.p, 1);
-    const dec = Math.pow(STANDARD_LEG_DECIMAL, combo.length);
-    const ev = prob * (dec - 1) - (1 - prob);
-    if (!best || ev > best.ev) {
-      best = {
-        legs: combo.map(({ gamePk, side }) => ({ gamePk, side })),
-        prob,
-        ev,
-        bookLine: standardBookLine(combo.length),
-      };
-    }
-  };
-  for (let i = 0; i < candidates.length; i++)
-    for (let j = i + 1; j < candidates.length; j++) {
-      consider([candidates[i], candidates[j]]);
-      for (let k = j + 1; k < candidates.length; k++) consider([candidates[i], candidates[j], candidates[k]]);
-    }
-  return best;
-}
-
 export default function ParlayLabTab() {
   const slate = useSlate();
   const [params, setParams] = useSearchParams();
@@ -123,21 +89,9 @@ export default function ParlayLabTab() {
     return () => clearTimeout(t);
   }, [JSON.stringify(legs), bookOdds, bookInvalid]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const modelSlip = useMemo(() => computeModelSlip(games), [games]);
   const result = price.data;
   const priceError = price.error instanceof ApiError ? price.error : null;
   const correlated = priceError?.code === "correlated_legs";
-
-  const loadModelSlip = () => {
-    if (!modelSlip) return;
-    setBookRaw(`+${modelSlip.bookLine}`);
-    setParams((prev) => {
-      const p = new URLSearchParams(prev);
-      p.set("legs", modelSlip.legs.map((l) => `${l.gamePk}:${l.side}`).join(","));
-      p.set("book", `+${modelSlip.bookLine}`);
-      return p;
-    });
-  };
 
   if (slate.isLoading)
     return (
@@ -147,7 +101,7 @@ export default function ParlayLabTab() {
   if (slate.data?.mode !== "live")
     return (
       <div className="max-w-7xl mx-auto flex flex-col gap-4">
-        <div className="moneyline-section-header w-1/3">PARLAY LAB</div>
+        <div className="moneyline-section-header w-1/3">PARLAY CHECK</div>
         <div className="moneyline-panel items-center justify-center text-center p-10 font-mono">
           <div className="text-warning text-sm uppercase tracking-widest mb-2">NO LIVE SLATE</div>
           <div className="text-xs text-muted-foreground max-w-sm">
@@ -161,33 +115,12 @@ export default function ParlayLabTab() {
   return (
     <div className="max-w-7xl mx-auto flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="moneyline-section-header w-full sm:w-1/3">PARLAY LAB · 2–6 LEGS FROM TODAY'S SLATE</div>
+        <div className="moneyline-section-header w-full sm:w-1/3">PARLAY CHECK · 2–6 LEGS FROM TODAY'S SLATE</div>
         <div className="font-mono text-[10px] text-muted-foreground">{result?.price_basis || "SEASON MODEL PROBABILITIES (NOT ADJ)."}</div>
       </div>
-
-      {modelSlip && (
-        <div className="border border-primary/40 bg-primary/5 p-3 flex flex-wrap items-center gap-3 font-mono text-xs">
-          <Badge variant="outline" className="text-primary border-primary/40 text-[10px]">MODEL SLIP OF THE DAY</Badge>
-          {modelSlip.legs.map((l) => {
-            const g = games.find((x) => String(x.game_pk) === l.gamePk);
-            return (
-              <span key={l.gamePk} className="tabular-nums">
-                {l.side === "home" ? g?.home : g?.away} ({formatProb(sideProb(g, l.side))})
-              </span>
-            );
-          })}
-          <span className="text-muted-foreground">
-            COMBINED {formatProb(modelSlip.prob)} · AT STANDARD +{modelSlip.bookLine} · EV {modelSlip.ev >= 0 ? "+" : ""}
-            {modelSlip.ev.toFixed(3)}u
-          </span>
-          <button onClick={loadModelSlip} className="border border-primary/40 px-2 py-1 text-primary hover:bg-primary/10 transition-colors text-[10px] uppercase">
-            LOAD RECEIPTS →
-          </button>
-          <span className="text-[9px] text-muted-foreground w-full">
-            Highest-EV 2–3 leg combination at a standard −110-per-leg book price. It is research output, not a recommendation.
-          </span>
-        </div>
-      )}
+      <div className="border border-border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
+        Build a paper combination only when you have a specific research question. This check reports combined probability and fair odds under an independence assumption; it does not recommend a slip or provide sportsbook prices.
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Leg picker */}

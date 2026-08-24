@@ -131,6 +131,7 @@ class MatchupInput(BaseModel):
     team_b: TeamStats
     book_line_a: int | None = None
     book_line_b: int | None = None
+    evaluation_side: Literal["a", "b"] = "a"
 
     @model_validator(mode="after")
     def validate_lines(self) -> "MatchupInput":
@@ -518,6 +519,10 @@ async def matchup(payload: MatchupInput) -> dict[str, Any]:
     model_prob_a = log5_probability(strength_a, strength_b)
     fair_line_a = probability_to_moneyline(model_prob_a)
     fair_line_b = probability_to_moneyline(1 - model_prob_a)
+    model_prob_b = 1 - model_prob_a
+    evaluates_b = payload.evaluation_side == "b"
+    evaluated_probability = model_prob_b if evaluates_b else model_prob_a
+    evaluated_line = payload.book_line_b if evaluates_b else payload.book_line_a
 
     implied_a = (
         moneyline_to_probability(payload.book_line_a)
@@ -530,8 +535,8 @@ async def matchup(payload: MatchupInput) -> dict[str, Any]:
         else None
     )
     edge = (
-        edge_probability(model_prob_a, payload.book_line_a)
-        if payload.book_line_a is not None
+        edge_probability(evaluated_probability, evaluated_line)
+        if evaluated_line is not None
         else None
     )
     vig = (
@@ -553,20 +558,23 @@ async def matchup(payload: MatchupInput) -> dict[str, Any]:
         verdict = "NO VALUE"
 
     half_kelly = (
-        half_kelly_fraction(model_prob_a, payload.book_line_a)
-        if payload.book_line_a is not None
+        half_kelly_fraction(evaluated_probability, evaluated_line)
+        if evaluated_line is not None
         else 0
     )
     return {
         "model_prob_a": round(model_prob_a, 4),
-        "model_prob_b": round(1 - model_prob_a, 4),
+        "model_prob_b": round(model_prob_b, 4),
         "implied_prob_a": round(implied_a, 4) if implied_a is not None else None,
         "implied_prob_b": round(implied_b, 4) if implied_b is not None else None,
         "edge_pp": round(edge * 100, 1) if edge is not None else None,
         "vig_pp": round(vig * 100, 1) if vig is not None else None,
-        "break_even_rate": round(implied_a, 4) if implied_a is not None else None,
+        "break_even_rate": round(
+            implied_b if evaluates_b else implied_a, 4
+        ) if evaluated_line is not None else None,
         "verdict": verdict,
         "kelly_fraction": round(half_kelly, 4),
+        "evaluation_side": payload.evaluation_side,
         "fair_line_a": fair_line_a,
         "fair_line_b": fair_line_b,
         "formula": {

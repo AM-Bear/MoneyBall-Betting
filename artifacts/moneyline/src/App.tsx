@@ -3,12 +3,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { Route, Switch, Router as WouterRouter, useLocation } from 'wouter';
+import { Route, Switch, Router as WouterRouter, useLocation, useSearchParams } from 'wouter';
 
-import { CommandBar, TABS } from '@/components/command-bar';
+import { CommandBar, LEGACY_SHORTCUTS } from '@/components/command-bar';
 import { StatusStrip } from '@/components/status-strip';
 import { TerminalBoot, PanelSkeleton } from '@/components/layout';
 import DeskTab from '@/tabs/desk';
+import TodayTab from '@/tabs/today';
+import ResearchHub from '@/tabs/research-hub';
+import TrackRecordPage from '@/tabs/track-record-page';
+import SettingsPage from '@/tabs/settings';
 
 import { useHealth, useSlate } from '@/api';
 
@@ -31,6 +35,22 @@ function LazyPane({ children }: { children: React.ReactNode }) {
   );
 }
 
+function LazyPage({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<main className="page-wrap"><PanelSkeleton /></main>}>
+      {children}
+    </Suspense>
+  );
+}
+
+function RootExperience() {
+  const [params] = useSearchParams();
+  // Existing shared links such as /?team=OAK&year=2002 remain Desk links.
+  // A clean root URL is the new Today experience.
+  if (params.get("team") || params.get("year")) return <DeskTab />;
+  return <TodayTab />;
+}
+
 function Shell() {
   const health = useHealth();
   const slate = useSlate();
@@ -44,9 +64,9 @@ function Shell() {
       const tag = el?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (el as HTMLElement)?.isContentEditable) return;
       const idx = parseInt(e.key, 10) - 1;
-      if (idx >= 0 && idx < TABS.length) {
+       if (idx >= 0 && idx < LEGACY_SHORTCUTS.length) {
         e.preventDefault();
-        navigate(TABS[idx].path);
+         navigate(LEGACY_SHORTCUTS[idx].path);
       }
     };
     document.addEventListener('keydown', down);
@@ -67,12 +87,21 @@ function Shell() {
       />
 
       <Switch>
-        <Route path="/" component={DeskTab} />
+        <Route path="/" component={RootExperience} />
+        <Route path="/desk"><LazyPane><DeskTab /></LazyPane></Route>
+        <Route path="/research"><LazyPage><ResearchHub /></LazyPage></Route>
+        <Route path="/track-record"><LazyPage><TrackRecordPage /></LazyPage></Route>
+        <Route path="/settings"><LazyPage><SettingsPage /></LazyPage></Route>
         <Route path="/players"><LazyPane><PlayerDeskTab /></LazyPane></Route>
+        <Route path="/research/players"><LazyPane><PlayerDeskTab /></LazyPane></Route>
         <Route path="/h2h"><LazyPane><H2HTab /></LazyPane></Route>
+        <Route path="/research/matchups"><LazyPane><H2HTab /></LazyPane></Route>
         <Route path="/parlay"><LazyPane><ParlayLabTab /></LazyPane></Route>
+        <Route path="/research/parlay"><LazyPane><ParlayLabTab /></LazyPane></Route>
         <Route path="/season"><LazyPane><SeasonDeskTab /></LazyPane></Route>
+        <Route path="/research/season"><LazyPane><SeasonDeskTab /></LazyPane></Route>
         <Route path="/wire"><LazyPane><WireTab /></LazyPane></Route>
+        <Route path="/research/wire"><LazyPane><WireTab /></LazyPane></Route>
         <Route>
           <div className="flex-1 flex items-center justify-center font-mono">404 NOT FOUND</div>
         </Route>

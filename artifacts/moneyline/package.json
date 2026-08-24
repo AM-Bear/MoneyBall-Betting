@@ -10,7 +10,8 @@
     "build:production": "pnpm run precompute && pnpm run build",
     "start": "cd ../.. && NODE_ENV=production python -m backend.serve_spa",
     "serve": "vite preview --config vite.config.ts --host 0.0.0.0",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test:today": "node --test tests/game-status.test.mjs"
   },
   "devDependencies": {
     "@hookform/resolvers": "^3.10.0",

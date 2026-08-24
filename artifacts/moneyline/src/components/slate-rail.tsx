@@ -47,6 +47,7 @@ export interface SlateGame {
   time_et?: string;
   badges?: string[];
   status?: string;
+  pricing_error?: boolean;
 }
 
 function ProbableLine({
@@ -102,50 +103,51 @@ export function SlateRail({
         {games.map((game, i) => (
           <div
             key={`${game.away}-${game.home}-${i}`}
-            role="button"
-            tabIndex={0}
-            onClick={() => onSelectGame(game)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onSelectGame(game);
-              }
-            }}
-            className="text-left bg-background border border-border p-2 hover:border-primary transition-colors group flex flex-col gap-1.5 relative overflow-hidden cursor-pointer focus-visible:outline focus-visible:outline-1 focus-visible:outline-primary"
+            className="text-left bg-background border border-border hover:border-primary transition-colors group flex flex-col gap-1.5 relative overflow-hidden"
           >
             <div className="absolute top-0 right-0 w-1 h-full bg-muted group-hover:bg-primary/50 transition-colors" />
+            <button
+              type="button"
+              onClick={() => onSelectGame(game)}
+              className="text-left p-2 pb-1 focus-visible:outline focus-visible:outline-1 focus-visible:outline-primary"
+              aria-label={`Open ${game.away} at ${game.home} in the Desk`}
+              data-testid={`button-open-slate-game-${game.game_pk || i}`}
+            >
+              {mode === "historical" && game.status && (
+                <div className="text-[9px] text-muted-foreground uppercase">{game.status}</div>
+              )}
+              {mode === "live" && (game.time_et || game.status) && (
+                <div className="flex justify-between text-[9px] text-muted-foreground uppercase">
+                  <span>{game.time_et}</span>
+                  <span>{game.status}</span>
+                </div>
+              )}
 
-            {mode === "historical" && game.status && (
-              <div className="text-[9px] text-muted-foreground uppercase">{game.status}</div>
-            )}
-            {mode === "live" && (game.time_et || game.status) && (
-              <div className="flex justify-between text-[9px] text-muted-foreground uppercase">
-                <span>{game.time_et}</span>
-                <span>{game.status}</span>
+              <div className="flex flex-col mt-1.5">
+                <div className="flex justify-between items-center text-sm font-mono tabular-nums">
+                  <span className="font-bold">{game.away}</span>
+                  <span className="text-muted-foreground">{formatOdds(game.fair_lines?.away)}</span>
+                </div>
               </div>
-            )}
 
-            <div className="flex flex-col">
-              <div className="flex justify-between items-center text-sm font-mono tabular-nums">
-                <span className="font-bold">{game.away}</span>
-                <span className="text-muted-foreground">{formatOdds(game.fair_lines.away)}</span>
+              <div className="flex flex-col mt-1">
+                <div className="flex justify-between items-center text-sm font-mono tabular-nums">
+                  <span className="font-bold flex items-center gap-1">
+                    <span className="text-[10px] text-muted-foreground">@</span>
+                    {game.home}
+                  </span>
+                  <span className="text-muted-foreground">{formatOdds(game.fair_lines?.home)}</span>
+                </div>
               </div>
+            </button>
+
+            <div className="px-2 pb-1 flex flex-col gap-1">
               <ProbableLine side="away" game={game} onSelectProbable={onSelectProbable} />
-            </div>
-
-            <div className="flex flex-col">
-              <div className="flex justify-between items-center text-sm font-mono tabular-nums">
-                <span className="font-bold flex items-center gap-1">
-                  <span className="text-[10px] text-muted-foreground">@</span>
-                  {game.home}
-                </span>
-                <span className="text-muted-foreground">{formatOdds(game.fair_lines.home)}</span>
-              </div>
               <ProbableLine side="home" game={game} onSelectProbable={onSelectProbable} />
             </div>
 
             {game.adj_fair_lines && (
-              <div className="flex justify-between items-center text-[10px] font-mono tabular-nums text-warning border-t border-warning/20 pt-1">
+              <div className="mx-2 flex justify-between items-center text-[10px] font-mono tabular-nums text-warning border-t border-warning/20 pt-1">
                 <span className="uppercase tracking-wide">ADJ</span>
                 <span>
                   {formatOdds(game.adj_fair_lines.away)} / {formatOdds(game.adj_fair_lines.home)}
@@ -154,12 +156,11 @@ export function SlateRail({
             )}
 
             {(game.flags?.length || 0) > 0 && (
-              <div className="flex flex-wrap gap-1">
+              <div className="px-2 flex flex-wrap gap-1">
                 {game.flags!.map((flag, fi) => (
                   <Tooltip key={fi}>
                     <TooltipTrigger asChild>
                       <span
-                        onClick={(e) => e.stopPropagation()}
                         className="inline-flex items-center border border-destructive/40 bg-destructive/10 text-destructive text-[8px] font-mono px-1 py-0 uppercase cursor-help"
                       >
                         {flag.team} IL: {flag.player}
@@ -174,7 +175,7 @@ export function SlateRail({
               </div>
             )}
 
-            <div className="flex justify-between items-end mt-0.5 pt-1.5 border-t border-border/50">
+            <div className="mx-2 flex justify-between items-end mt-0.5 pt-1.5 border-t border-border/50">
               <div className="flex gap-1">
                 {game.badges?.map(b => (
                   <Badge key={b} variant="value" className="text-[9px] px-1 py-0 h-4 whitespace-nowrap">

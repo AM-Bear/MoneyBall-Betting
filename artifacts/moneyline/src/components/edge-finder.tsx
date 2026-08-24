@@ -24,6 +24,7 @@ export function EdgeFinder({
   activeSlateGame,
   overrideB,
   contextSlot,
+  deferUntilBookLine = false,
 }: {
   teamAStats: any;
   teamALabel: string;
@@ -32,6 +33,8 @@ export function EdgeFinder({
   overrideB?: { inputs: any; label: string } | null;
   /** Extra context rendered above the verdict (starter context, IL flags). */
   contextSlot?: React.ReactNode;
+  /** Today cards already display fair prices; only price a comparison after a manual line is entered. */
+  deferUntilBookLine?: boolean;
 }) {
   const [lineA, setLineA] = useState<string>("");
   const [lineB, setLineB] = useState<string>("");
@@ -74,16 +77,22 @@ export function EdgeFinder({
       matchup.reset();
       return;
     }
+    if (deferUntilBookLine && !isValidA && !isValidB) {
+      matchup.reset();
+      return;
+    }
 
     const payload = {
       team_a: inputsA,
       team_b: inputsB,
       book_line_a: isValidA ? parsedA : null,
       book_line_b: isValidB ? parsedB : null,
+      // The API scores the selected side, not merely the first field.
+      evaluation_side: isValidA ? "a" : "b",
     };
     
     matchup.mutate(payload);
-  }, [teamAStats, teamBData.data, lineA, lineB, activeSlateGame, overrideB?.inputs]);
+  }, [teamAStats, teamBData.data, lineA, lineB, activeSlateGame, overrideB?.inputs, deferUntilBookLine]);
 
   const result = matchup.data;
   const isLoading = matchup.isPending || (teamBData.isLoading && !activeSlateGame && !overrideB);
@@ -94,6 +103,11 @@ export function EdgeFinder({
     : overrideB
       ? overrideB.label
       : `${teamBId.team} ${teamBId.year}`;
+  const isValidLineA = !isMalformedMoneyline(lineA) && parseMoneyline(lineA) !== null;
+  const isValidLineB = !isMalformedMoneyline(lineB) && parseMoneyline(lineB) !== null;
+  const evaluationLabel = result?.evaluation_side === "b" || (!isValidLineA && isValidLineB)
+    ? labelB
+    : labelA;
 
   const verdictVariant = 
     result?.verdict === "VALUE" ? "value" :
@@ -179,6 +193,9 @@ export function EdgeFinder({
               <Badge variant={verdictVariant} className="text-lg px-4 py-1 text-center whitespace-normal h-auto leading-tight">
                 {result.verdict}
               </Badge>
+              {result.edge_pp !== null && (
+                <span className="text-xs text-muted-foreground">Your price: {evaluationLabel}</span>
+              )}
               
               {result.edge_pp !== null && (
                 <div className="grid grid-cols-3 w-full gap-2 text-center divide-x divide-border border-y border-border py-2">
@@ -217,8 +234,8 @@ export function EdgeFinder({
         {/* Receipts */}
         {result?.receipts && (
           <div className="flex flex-col gap-1 border border-border p-2 bg-background/50 max-h-32 overflow-y-auto">
-            <div className="text-[9px] text-muted-foreground uppercase mb-1 sticky top-0 bg-background/50 backdrop-blur-sm z-10">Receipts (Team A)</div>
-            {result.receipts.team_a.map((r: any, i: number) => (
+            <div className="text-[9px] text-muted-foreground uppercase mb-1 sticky top-0 bg-background/50 backdrop-blur-sm z-10">Receipts ({evaluationLabel})</div>
+            {(result.evaluation_side === "b" ? result.receipts.team_b : result.receipts.team_a).map((r: any, i: number) => (
               <div key={i} className="flex justify-between text-[10px] font-mono text-muted-foreground">
                 <span className="truncate mr-2">{r.feature} ({r.value.toFixed(3)}) × {r.coefficient.toFixed(1)}</span>
                 <span className="text-primary shrink-0">{r.contribution > 0 ? "+" : ""}{r.contribution.toFixed(1)}</span>
