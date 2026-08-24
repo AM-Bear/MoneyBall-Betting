@@ -195,7 +195,13 @@ export default function ParlayLabTab() {
                       <span className="flex items-center gap-3 tabular-nums">
                         <span>{formatProb(leg?.probability ?? sideProb(g, l.side))}</span>
                         <span className="text-primary">{leg ? formatOdds(leg.fair_line) : ""}</span>
-                        <button onClick={() => toggleLeg(l.gamePk, l.side)} className="text-muted-foreground hover:text-destructive">✕</button>
+                        <button
+                          onClick={() => toggleLeg(l.gamePk, l.side)}
+                          aria-label={`Remove ${team} over ${opp} from parlay`}
+                          className="text-muted-foreground hover:text-destructive"
+                        >
+                          ✕
+                        </button>
                       </span>
                     </div>
                   );
