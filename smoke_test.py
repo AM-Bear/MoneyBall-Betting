@@ -243,8 +243,14 @@ def v2_tests(artifacts: dict) -> None:
     # Same-game legs are refused with the v1 error envelope, before any fetch.
     from fastapi.testclient import TestClient
 
+    from backend import auth as auth_lib
     from backend.main import app
 
+    # The desk now sits behind an authentication gate. This check is about the
+    # correlated-legs refusal, not about the gate, so the app-level dependency
+    # is overridden for the one request -- the same mechanism tests/conftest.py
+    # uses, and the same one the dedicated auth suite deliberately does not.
+    app.dependency_overrides[auth_lib.enforce_session] = lambda: None
     client = TestClient(app)  # no lifespan: the rejection needs no models/feeds
     response = client.post(
         "/api/parlay/price",
@@ -253,6 +259,7 @@ def v2_tests(artifacts: dict) -> None:
     assert response.status_code == 400
     envelope = response.json()
     assert envelope["error"]["code"] == "correlated_legs", envelope
+    app.dependency_overrides.pop(auth_lib.enforce_session, None)
 
     # 4. Blended ADJ inputs: w·starter + (1−w)·team, share capped to [0.4, 0.8].
     assert parse_innings("139.2") == 139 + 2 / 3, "MLB .2 innings notation"

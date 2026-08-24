@@ -180,3 +180,70 @@ def fetch_pick(record_schema) -> Callable[[str], dict[str, Any] | None]:
                 return cursor.fetchone()
 
     return _fetch
+
+
+# --------------------------------------------------------------------------
+# Authentication fixtures
+#
+# Two jobs here. `bypass_auth_gate` keeps the pre-existing suite meaningful:
+# those tests were written to assert the desk's math and data contracts, not
+# its gate, and every one of them would otherwise stop at a 401. The gate stays
+# fully enforced for tests marked `auth_gate`, which are the ones that exist to
+# check it.
+#
+# `auth_schema` gives those gate tests real tables, in a per-process schema, by
+# running the same DDL the production boot migration runs.
+# --------------------------------------------------------------------------
+AUTH_TEST_SCHEMA = f"moneyline_auth_tests_{os.getpid()}"
+
+
+@pytest.fixture(autouse=True)
+def bypass_auth_gate(request: pytest.FixtureRequest):
+    if "auth_gate" in request.keywords:
+        yield
+        return
+    import backend.main as main
+    from backend import auth as auth_lib
+
+    main.app.dependency_overrides[auth_lib.enforce_session] = lambda: None
+    try:
+        yield
+    finally:
+        main.app.dependency_overrides.pop(auth_lib.enforce_session, None)
+
+
+@pytest.fixture()
+def auth_schema(monkeypatch: pytest.MonkeyPatch):
+    """Isolated account tables, built by the real `AUTH_SCHEMA_STATEMENTS`.
+
+    Running production DDL rather than a hand-copied duplicate means a column
+    added to the boot migration and forgotten here shows up as a test failure
+    instead of quiet drift.
+    """
+    import backend.auth_store as auth_store
+
+    dsn = _dsn()
+
+    def test_connection() -> psycopg.Connection[Any]:
+        return psycopg.connect(
+            dsn,
+            row_factory=dict_row,
+            options=f"-c search_path={AUTH_TEST_SCHEMA}",
+        )
+
+    with psycopg.connect(dsn, autocommit=True) as admin:
+        admin.execute(f"DROP SCHEMA IF EXISTS {AUTH_TEST_SCHEMA} CASCADE")
+        admin.execute(f"CREATE SCHEMA {AUTH_TEST_SCHEMA}")
+
+    monkeypatch.setattr(auth_store, "_connection", test_connection)
+    auth_store.ensure_auth_schema_sync()
+
+    # bcrypt at the production work factor costs ~250ms per hash; the tests
+    # care that hashing happens and verifies, not how long it takes.
+    monkeypatch.setenv("AUTH_BCRYPT_ROUNDS", "4")
+    monkeypatch.setenv("AUTH_RATE_LIMIT_ENABLED", "false")
+    try:
+        yield test_connection
+    finally:
+        with psycopg.connect(dsn, autocommit=True) as admin:
+            admin.execute(f"DROP SCHEMA IF EXISTS {AUTH_TEST_SCHEMA} CASCADE")
