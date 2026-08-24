@@ -264,7 +264,7 @@ export function CommandBar({
            )}>{slateStatus === "LIVE" ? "Live" : slateStatus === "HISTORICAL" ? "Historical" : "Unavailable"}</span>
         </div>
          {user && <div className="flex items-center gap-2 border-l border-border pl-3">
-           <span className="hidden max-w-28 truncate sm:inline" title={user.email}>{user.name || user.email}</span>
+           <span className="hidden max-w-28 truncate sm:inline" title={user.email}>{user.display_name || user.email}</span>
            {confirmLogout ? <><span className="text-warning">Sign out?</span><button type="button" disabled={logout.isPending} onClick={() => logout.mutate(undefined, { onSuccess: () => navigate('/') })} className="moneyline-focus-ring text-primary hover:underline">{logout.isPending ? '…' : 'Yes'}</button><button type="button" onClick={() => setConfirmLogout(false)} className="moneyline-focus-ring hover:text-foreground">No</button></> :
              <button type="button" onClick={() => setConfirmLogout(true)} className="moneyline-focus-ring hover:text-foreground" aria-label="Sign out">LOG OUT</button>}
          </div>}

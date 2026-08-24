@@ -40,10 +40,12 @@ async function fetchApi<T>(path: string, options?: RequestInit): Promise<T> {
 export interface AuthUser {
   id: string;
   email: string;
-  name?: string | null;
+  display_name?: string | null;
   avatar_url?: string | null;
 }
 export interface SessionResponse { authenticated: boolean; user: AuthUser | null }
+
+export interface AuthResponse extends SessionResponse { message?: string; session?: { expires_at?: string } }
 export interface AuthMessage { message?: string }
 
 export function useSession() {
@@ -72,12 +74,22 @@ export function useAuthActions() {
     queryClient.setQueryData(['auth', 'session'], { authenticated: false, user: null });
     queryClient.removeQueries({ predicate: (query) => query.queryKey[0] !== 'auth' });
   };
-  const mutation = (path: string) => useMutation({
+  const mutation = (path: string) => useMutation<AuthResponse | AuthMessage, Error, Record<string, string> | undefined>({
     mutationFn: (payload?: Record<string, string>) => fetchApi<AuthMessage>(path, {
       method: 'POST',
       body: JSON.stringify(payload || {}),
     }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['auth', 'session'] }),
+    onSuccess: (data) => {
+      if ('authenticated' in data && data.authenticated && data.user) {
+        queryClient.setQueryData(['auth', 'session'], {
+          authenticated: true,
+          user: data.user,
+          session: data.session,
+        });
+      } else {
+        queryClient.invalidateQueries({ queryKey: ['auth', 'session'] });
+      }
+    },
   });
   return {
     login: mutation('/auth/login'),
@@ -89,11 +101,12 @@ export function useAuthActions() {
       onSuccess: clearSession,
       onError: clearSession,
     }),
+    clearSession,
   };
 }
 
 export function googleSignInUrl(returnTo: string) {
-  return `${API_BASE}/auth/google?return_to=${encodeURIComponent(returnTo)}`;
+  return `${API_BASE}/auth/google/start?next=${encodeURIComponent(returnTo)}`;
 }
 
 // Hooks
