@@ -46,6 +46,35 @@ export type ResearchDestination = {
   description: string;
 };
 
+export const researchDestinations: ResearchDestination[] = [
+  {
+    href: "/research/players",
+    label: "Players",
+    description: "Compare hitting and pitching profiles with live-season context.",
+  },
+  {
+    href: "/research/matchups",
+    label: "Matchups",
+    description: "Put two teams or players side by side and inspect the model inputs.",
+  },
+  {
+    href: "/research/season",
+    label: "Season outlook",
+    description: "Review projected wins, playoff odds, and remaining-schedule context.",
+  },
+  {
+    href: "/research/wire",
+    label: "Wire",
+    description:
+      "Read injury, roster, and research context without treating it as a price input.",
+  },
+];
+
+export const RESEARCH_STRUCTURED_DATA_DESCRIPTION =
+  "Baseball research surfaces for players, matchups, season outlook, and wire context.";
+export const TRACK_RECORD_STRUCTURED_DATA_DESCRIPTION =
+  "A public MONEYLINE record showing live grading, starter-adjusted grading, paper parlays, and historical simulation as separate views.";
+
 export function researchHubStructuredData(
   destinations: ResearchDestination[],
 ) {
@@ -55,8 +84,7 @@ export function researchHubStructuredData(
     "@id": `${SITE_URL}/research#webpage`,
     url: siteUrl("/research"),
     name: "Research | MONEYLINE",
-    description:
-      "Baseball research surfaces for players, matchups, season outlook, and wire context.",
+    description: RESEARCH_STRUCTURED_DATA_DESCRIPTION,
     isPartOf: { "@id": `${SITE_URL}/#website` },
     publisher: { "@id": `${SITE_URL}/#organization` },
     about: {
@@ -85,8 +113,7 @@ export const trackRecordStructuredData = {
   "@id": `${SITE_URL}/track-record#webpage`,
   url: siteUrl("/track-record"),
   name: "Track record | MONEYLINE",
-  description:
-    "A public MONEYLINE record showing live grading, starter-adjusted grading, paper parlays, and historical simulation as separate views.",
+  description: TRACK_RECORD_STRUCTURED_DATA_DESCRIPTION,
   isPartOf: { "@id": `${SITE_URL}/#website` },
   publisher: { "@id": `${SITE_URL}/#organization` },
   about: {

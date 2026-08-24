@@ -8,6 +8,7 @@ loads, while the normal React root takes over for interactive use.
 from __future__ import annotations
 
 import html
+import json
 import os
 import re
 from dataclasses import dataclass
@@ -21,6 +22,7 @@ SITE_URL = os.getenv("MONEYLINE_SITE_URL", "https://money-ball-betting.replit.ap
 # because backend.serve_spa has to recognise an UNrendered shell, and two
 # copies of this string would drift.
 SEO_CONTENT_PLACEHOLDER = "<!-- server-seo-content -->"
+SEO_STRUCTURED_DATA_PLACEHOLDER = "<!-- server-seo-structured-data -->"
 
 SITEMAP_PATH = "/sitemap.xml"
 
@@ -47,6 +49,40 @@ COMMON_LINKS = (
     ("Parlay research", "/research/parlay"),
     ("Season research", "/research/season"),
     ("Baseball wire", "/research/wire"),
+)
+
+# Keep the destination metadata in one place for the server-rendered schema and
+# the Research Hub's visible server copy. The React page mirrors these values in
+# its client-side schema so hydration does not change the machine-readable page.
+RESEARCH_DESTINATIONS = (
+    (
+        "/research/players",
+        "Players",
+        "Compare hitting and pitching profiles with live-season context.",
+    ),
+    (
+        "/research/matchups",
+        "Matchups",
+        "Put two teams or players side by side and inspect the model inputs.",
+    ),
+    (
+        "/research/season",
+        "Season outlook",
+        "Review projected wins, playoff odds, and remaining-schedule context.",
+    ),
+    (
+        "/research/wire",
+        "Wire",
+        "Read injury, roster, and research context without treating it as a price input.",
+    ),
+)
+
+RESEARCH_STRUCTURED_DATA_DESCRIPTION = (
+    "Baseball research surfaces for players, matchups, season outlook, and wire context."
+)
+TRACK_RECORD_STRUCTURED_DATA_DESCRIPTION = (
+    "A public MONEYLINE record showing live grading, starter-adjusted grading, "
+    "paper parlays, and historical simulation as separate views."
 )
 
 
@@ -98,7 +134,7 @@ ROUTE_SEO: dict[str, RouteSeo] = {
                 "and transaction context.",
             ),
         ),
-        links=COMMON_LINKS[1:],
+        links=tuple((label, href) for href, label, _ in RESEARCH_DESTINATIONS),
         canonical_path="/research",
     ),
     "/track-record": RouteSeo(
@@ -424,6 +460,81 @@ def _set_seo_attribute(markup: str, marker: str, attribute: str, value: str) -> 
     return markup[: match.start()] + new_tag + markup[match.end() :]
 
 
+def _json_ld_script(data: dict[str, object]) -> str:
+    """Serialize JSON-LD safely for an inline script element."""
+    payload = json.dumps(data, separators=(",", ":"), ensure_ascii=False)
+    # JSON is inside HTML rather than an isolated response. Escape characters
+    # that could terminate the script even if metadata later becomes editable.
+    payload = (
+        payload.replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
+    return f'<script type="application/ld+json">{payload}</script>'
+
+
+def _route_structured_data(path: str, site_url: str = SITE_URL) -> str:
+    """Return the route schema for the two public pages with one schema each."""
+    route = route_seo_for(path)
+    if route is None:
+        return ""
+
+    canonical = route.canonical_path
+    if canonical == "/research":
+        data: dict[str, object] = {
+            "@context": "https://schema.org",
+            "@type": "CollectionPage",
+            "@id": f"{absolute_url('/research', site_url)}#webpage",
+            "url": absolute_url("/research", site_url),
+            "name": "Research | MONEYLINE",
+            "description": RESEARCH_STRUCTURED_DATA_DESCRIPTION,
+            "isPartOf": {"@id": f"{absolute_url('/', site_url)}#website"},
+            "publisher": {"@id": f"{absolute_url('/', site_url)}#organization"},
+            "about": {
+                "@type": "Thing",
+                "name": "Baseball statistical research",
+            },
+            "mainEntity": {
+                "@type": "ItemList",
+                "name": "MONEYLINE research destinations",
+                "itemListOrder": "https://schema.org/ItemListOrderAscending",
+                "numberOfItems": len(RESEARCH_DESTINATIONS),
+                "itemListElement": [
+                    {
+                        "@type": "ListItem",
+                        "position": index,
+                        "name": label,
+                        "description": description,
+                        "url": absolute_url(href, site_url),
+                    }
+                    for index, (href, label, description) in enumerate(
+                        RESEARCH_DESTINATIONS, start=1
+                    )
+                ],
+            },
+        }
+        return _json_ld_script(data)
+
+    if canonical == "/track-record":
+        data = {
+            "@context": "https://schema.org",
+            "@type": "WebPage",
+            "@id": f"{absolute_url('/track-record', site_url)}#webpage",
+            "url": absolute_url("/track-record", site_url),
+            "name": "Track record | MONEYLINE",
+            "description": TRACK_RECORD_STRUCTURED_DATA_DESCRIPTION,
+            "isPartOf": {"@id": f"{absolute_url('/', site_url)}#website"},
+            "publisher": {"@id": f"{absolute_url('/', site_url)}#organization"},
+            "about": {
+                "@type": "Thing",
+                "name": "Baseball model track record",
+            },
+        }
+        return _json_ld_script(data)
+
+    return ""
+
+
 def render_index(index_html: str, path: str) -> str:
     """Inject route-specific head tags and readable content into index.html."""
     route = route_seo_for(path) or ROUTE_SEO["/"]
@@ -458,6 +569,11 @@ def render_index(index_html: str, path: str) -> str:
         rendered = rendered.replace(
             '<div id="root"></div>', f'<div id="root">{content}</div>', 1
         )
+    structured_data = _route_structured_data(path)
+    if SEO_STRUCTURED_DATA_PLACEHOLDER in rendered:
+        rendered = rendered.replace(SEO_STRUCTURED_DATA_PLACEHOLDER, structured_data, 1)
+    elif structured_data:
+        rendered = rendered.replace("</head>", f"    {structured_data}\n  </head>", 1)
     return rendered
 
 

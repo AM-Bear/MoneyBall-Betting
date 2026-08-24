@@ -2,16 +2,22 @@ import { BarChart3, BookOpen, Newspaper, Users, Swords } from "lucide-react";
 import { Link } from "wouter";
 import { ResearchTag } from "@/components/research-tag";
 import {
+  researchDestinations,
   researchHubStructuredData,
   StructuredData,
 } from "@/lib/structured-data";
 
-const destinations = [
-  { href: "/research/players", label: "Players", description: "Compare hitting and pitching profiles with live-season context.", icon: Users },
-  { href: "/research/matchups", label: "Matchups", description: "Put two teams or players side by side and inspect the model inputs.", icon: Swords },
-  { href: "/research/season", label: "Season outlook", description: "Review projected wins, playoff odds, and remaining-schedule context.", icon: BarChart3 },
-  { href: "/research/wire", label: "Wire", description: "Read injury, roster, and research context without treating it as a price input.", icon: Newspaper },
-];
+const destinationIcons = {
+  Players: Users,
+  Matchups: Swords,
+  "Season outlook": BarChart3,
+  Wire: Newspaper,
+} as const;
+
+const destinations = researchDestinations.map((destination) => ({
+  ...destination,
+  icon: destinationIcons[destination.label as keyof typeof destinationIcons],
+}));
 
 export default function ResearchHub() {
   return (

@@ -1,5 +1,6 @@
 """Tests for the lightweight production SPA server."""
 
+import json
 import re
 import xml.etree.ElementTree as ET
 
@@ -49,6 +50,72 @@ def test_research_route_includes_pre_javascript_content_and_metadata() -> None:
         'href="https://money-ball-betting.replit.app/research/players"'
         in response.text
     )
+
+
+def _json_ld_documents(markup: str) -> list[dict[str, object]]:
+    return [
+        json.loads(payload)
+        for payload in re.findall(
+            r'<script type="application/ld\+json">(.*?)</script>',
+            markup,
+            flags=re.DOTALL,
+        )
+    ]
+
+
+def test_research_route_includes_its_collection_schema_before_javascript() -> None:
+    response = client.get("/research")
+    assert response.status_code == 200
+
+    collection = next(
+        document
+        for document in _json_ld_documents(response.text)
+        if document.get("@type") == "CollectionPage"
+    )
+    assert collection["url"] == "https://money-ball-betting.replit.app/research"
+    assert collection["name"] == "Research | MONEYLINE"
+    assert collection["isPartOf"] == {
+        "@id": "https://money-ball-betting.replit.app/#website"
+    }
+    items = collection["mainEntity"]["itemListElement"]
+    assert collection["mainEntity"]["numberOfItems"] == 4
+    assert [item["name"] for item in items] == [
+        "Players",
+        "Matchups",
+        "Season outlook",
+        "Wire",
+    ]
+    assert [item["url"] for item in items] == [
+        "https://money-ball-betting.replit.app/research/players",
+        "https://money-ball-betting.replit.app/research/matchups",
+        "https://money-ball-betting.replit.app/research/season",
+        "https://money-ball-betting.replit.app/research/wire",
+    ]
+
+
+def test_track_record_route_includes_its_page_schema_before_javascript() -> None:
+    response = client.get("/track-record")
+    assert response.status_code == 200
+
+    page = next(
+        document
+        for document in _json_ld_documents(response.text)
+        if document.get("@type") == "WebPage"
+    )
+    assert page == {
+        "@context": "https://schema.org",
+        "@type": "WebPage",
+        "@id": "https://money-ball-betting.replit.app/track-record#webpage",
+        "url": "https://money-ball-betting.replit.app/track-record",
+        "name": "Track record | MONEYLINE",
+        "description": (
+            "A public MONEYLINE record showing live grading, starter-adjusted grading, "
+            "paper parlays, and historical simulation as separate views."
+        ),
+        "isPartOf": {"@id": "https://money-ball-betting.replit.app/#website"},
+        "publisher": {"@id": "https://money-ball-betting.replit.app/#organization"},
+        "about": {"@type": "Thing", "name": "Baseball model track record"},
+    }
 
 
 def test_sitemap_lists_only_canonical_public_routes() -> None:
