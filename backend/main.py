@@ -130,7 +130,8 @@ class ParlayInput(BaseModel):
 
 INDEPENDENCE_NOTE = (
     "Combined probability multiplies the legs under an independence "
-    "assumption. Legs from the same game are refused: they are correlated "
+    "assumption. Legs from the same matchup are refused — the same game, or "
+    "either end of a doubleheader: they are correlated "
     "and the math would be dishonest."
 )
 
@@ -1008,6 +1009,18 @@ async def player_card(player_id: int) -> dict[str, Any]:
         )
     return card
 
+def _matchup_key(row: dict[str, Any]) -> tuple[frozenset[str], str]:
+    """Identify the *matchup*, not the game instance.
+
+    A doubleheader is two distinct gamePks between the same two clubs on the
+    same day, so a gamePk-keyed check waves both legs through and the parlay
+    math multiplies them as if they were independent. They are not: the two
+    games share both rosters and both bullpens. The pair is unordered so a
+    home/away swap between the games still collides.
+    """
+    return frozenset({str(row["home"]), str(row["away"])}), str(row["game_date"])
+
+
 async def _resolve_parlay_legs(payload: ParlayInput) -> list[dict[str, Any]]:
     game_pks = [leg.gamePk for leg in payload.legs]
     if len(set(game_pks)) != len(game_pks):
@@ -1026,6 +1039,7 @@ async def _resolve_parlay_legs(payload: ParlayInput) -> list[dict[str, Any]]:
         )
     rows = {game["game_pk"]: game for game in slate.get("games", [])}
     legs: list[dict[str, Any]] = []
+    seen_matchups: set[tuple[frozenset[str], str]] = set()
     for leg in payload.legs:
         row = rows.get(leg.gamePk)
         if row is None or row.get("pricing_error"):
@@ -1034,6 +1048,18 @@ async def _resolve_parlay_legs(payload: ParlayInput) -> list[dict[str, Any]]:
                 f"Game {leg.gamePk} is not on today's priced slate.",
                 404,
             )
+        matchup = _matchup_key(row)
+        if matchup in seen_matchups:
+            raise MoneylineError(
+                "correlated_legs",
+                f"SAME-MATCHUP LEGS REFUSED — {row['away']} @ {row['home']} "
+                f"appears more than once on {row['game_date']}. A doubleheader "
+                "is two game IDs but one matchup: the same two rosters and "
+                "bullpens decide both, so multiplying the legs as independent "
+                "would be dishonest.",
+                400,
+            )
+        seen_matchups.add(matchup)
         probability = (
             float(row["model_prob_home"])
             if leg.side == "home"
