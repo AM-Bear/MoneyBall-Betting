@@ -759,6 +759,23 @@ async def get_prior_season_wins() -> dict[str, Any]:
     value, _ = await pool_cache.get_or_set(f"standings:final:{season}", loader)
     return value
 
+def _majors_side(entry: dict[str, Any]) -> str | None:
+    """Attribute a transaction to its major-league club.
+
+    Even scoped to sportId=1, one end of a move is often an affiliate: an
+    option-down has ``toTeam`` = "Buffalo Bisons" and ``fromTeam`` = "Toronto
+    Blue Jays". Preferring ``toTeam`` unconditionally attributed the move to the
+    affiliate, and ``_team_code`` then coined a phantom code from its initials.
+    Whichever side is a real MLB club is the one the wire means.
+    """
+    to_name = (entry.get("toTeam") or {}).get("name")
+    from_name = (entry.get("fromTeam") or {}).get("name")
+    for name in (to_name, from_name):
+        if name and name in TEAM_CODES:
+            return str(name)
+    return str(to_name or from_name) if (to_name or from_name) else None
+
+
 async def get_transactions(days: int = 7) -> list[dict[str, Any]]:
     """Majors-relevant transactions from the last N days, cached ~30m."""
 
@@ -767,7 +784,14 @@ async def get_transactions(days: int = 7) -> list[dict[str, Any]]:
         start = date.fromordinal(end.toordinal() - days)
         payload = await _fetch_json(
             "/api/v1/transactions",
-            {"startDate": start.isoformat(), "endDate": end.isoformat()},
+            # sportId=1 scopes this to MLB. Without it the feed returns every
+            # affiliated league -- Mexican League, Arizona Complex League, the
+            # lot -- roughly 4x the rows, none of them majors-relevant.
+            {
+                "startDate": start.isoformat(),
+                "endDate": end.isoformat(),
+                "sportId": 1,
+            },
         )
         items: list[dict[str, Any]] = []
         for entry in payload.get("transactions", []):
@@ -776,9 +800,7 @@ async def get_transactions(days: int = 7) -> list[dict[str, Any]]:
             wire_type = _classify_transaction(type_desc, description)
             if wire_type is None or not description:
                 continue
-            team_name = entry.get("toTeam", {}).get("name") or entry.get(
-                "fromTeam", {}
-            ).get("name")
+            team_name = _majors_side(entry)
             items.append(
                 {
                     "id": f"txn-{entry.get('id')}",
