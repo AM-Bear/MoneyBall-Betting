@@ -15,6 +15,7 @@ import TrackRecordPage from '@/tabs/track-record-page';
 import SettingsPage from '@/tabs/settings';
 
 import { useHealth, useSlate } from '@/api';
+import { applySeoMetadata } from '@/seo';
 
 const queryClient = new QueryClient();
 
@@ -178,7 +179,11 @@ function ResearchRedirect({ to }: { to: string }) {
 function Shell() {
   const health = useHealth();
   const slate = useSlate();
-  const [, navigate] = useLocation();
+  const [location, navigate] = useLocation();
+
+  useEffect(() => {
+    applySeoMetadata(location);
+  }, [location]);
 
   // Keyboard 1–6 switches tabs anywhere outside a text input.
   useEffect(() => {

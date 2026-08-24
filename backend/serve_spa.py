@@ -64,6 +64,16 @@ async def spa(request: Request) -> Response:
                 else {"Cache-Control": "no-cache"}
             )
             return FileResponse(candidate, headers=headers)
+        # Production builds include a pre-rendered HTML shell for every
+        # public route, so crawlers receive route-specific head metadata
+        # before the client application loads.
+        route_index = (DIST_DIR / path / "index.html").resolve()
+        try:
+            route_inside = route_index.is_relative_to(DIST_DIR)
+        except ValueError:
+            route_inside = False
+        if route_inside and route_index.is_file():
+            return FileResponse(route_index, headers={"Cache-Control": "no-cache"})
         # A missing build asset (or any file-like path) must 404 rather than
         # silently serving index.html to a JS/CSS request.
         last_segment = path.rsplit("/", 1)[-1]
