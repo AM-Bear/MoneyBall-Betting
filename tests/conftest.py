@@ -74,6 +74,9 @@ CREATE UNIQUE INDEX moneyline_record_game_idx
   ON moneyline_record_picks (game_pk);
 CREATE INDEX moneyline_record_grade_idx
   ON moneyline_record_picks (game_date, result);
+CREATE INDEX moneyline_record_pending_batch_idx
+  ON moneyline_record_picks (game_date, id)
+  WHERE result IS NULL;
 
 CREATE TABLE moneyline_parlay_slips (
   id SERIAL PRIMARY KEY,
@@ -92,6 +95,9 @@ CREATE TABLE moneyline_parlay_slips (
 CREATE UNIQUE INDEX moneyline_parlay_user_date_idx
   ON moneyline_parlay_slips (user_id, slip_date)
   WHERE user_id IS NOT NULL;
+CREATE INDEX moneyline_parlay_pending_batch_idx
+  ON moneyline_parlay_slips (slip_date, id)
+  WHERE result IS NULL;
 """
 
 

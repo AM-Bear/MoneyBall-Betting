@@ -94,6 +94,14 @@ def ensure_schema() -> bool:
         CREATE INDEX IF NOT EXISTS moneyline_record_grade_idx
           ON moneyline_record_picks (game_date, result)
         """,
+        # The grade worker reads the oldest unresolved rows with LIMIT. This
+        # partial index lets Postgres stop after one batch instead of filtering
+        # and sorting an ever-growing append-only ledger first.
+        """
+        CREATE INDEX IF NOT EXISTS moneyline_record_pending_batch_idx
+          ON moneyline_record_picks (game_date, id)
+          WHERE result IS NULL
+        """,
         """
         ALTER TABLE moneyline_record_picks
           ADD COLUMN IF NOT EXISTS probables jsonb,
@@ -130,6 +138,11 @@ def ensure_schema() -> bool:
         CREATE UNIQUE INDEX IF NOT EXISTS moneyline_parlay_user_date_idx
           ON moneyline_parlay_slips (user_id, slip_date)
           WHERE user_id IS NOT NULL
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS moneyline_parlay_pending_batch_idx
+          ON moneyline_parlay_slips (slip_date, id)
+          WHERE result IS NULL
         """,
         # Stamp every ledger table with the model identity that produced the
         # row. Nullable on purpose: rows written before versioning stay NULL
@@ -344,7 +357,10 @@ def store_slate_snapshot(slate: dict[str, Any]) -> bool:
     return True
 
 
-def pending_picks() -> list[dict[str, Any]]:
+MAX_PENDING_GRADE_ROWS = 100
+
+
+def pending_picks(limit: int = MAX_PENDING_GRADE_ROWS) -> list[dict[str, Any]]:
     with _connection() as connection:
         with connection.cursor() as cursor:
             cursor.execute(
@@ -353,7 +369,9 @@ def pending_picks() -> list[dict[str, Any]]:
                 FROM moneyline_record_picks
                 WHERE result IS NULL AND game_date <= CURRENT_DATE
                 ORDER BY game_date, id
-                """
+                LIMIT %s
+                """,
+                (max(1, min(limit, MAX_PENDING_GRADE_ROWS)),),
             )
             return list(cursor.fetchall())
 
@@ -783,7 +801,7 @@ def parlay_record(user_id: str | None = "test-user") -> dict[str, Any]:
         ],
     }
 
-def pending_parlays() -> list[dict[str, Any]]:
+def pending_parlays(limit: int = MAX_PENDING_GRADE_ROWS) -> list[dict[str, Any]]:
     """Ungraded slips up to and including today.
 
     Same-day slips are included so a completed parlay grades as soon as all
@@ -797,7 +815,9 @@ def pending_parlays() -> list[dict[str, Any]]:
                 FROM moneyline_parlay_slips
                 WHERE result IS NULL AND slip_date <= CURRENT_DATE
                 ORDER BY slip_date, id
-                """
+                LIMIT %s
+                """,
+                (max(1, min(limit, MAX_PENDING_GRADE_ROWS)),),
             )
             return list(cursor.fetchall())
 

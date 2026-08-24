@@ -262,9 +262,79 @@ def require_feature(feature: str):
 
 
 VOID_AFTER_DAYS = max(int(os.getenv("VOID_AFTER_DAYS", "3")), 1)
+SLATE_DATE_WINDOW_DAYS = max(int(os.getenv("SLATE_DATE_WINDOW_DAYS", "7")), 0)
+SLATE_RATE_LIMIT_MAX = 30
+SLATE_RATE_LIMIT_WINDOW_SECONDS = 60
+RECORD_GRADE_RATE_LIMIT_MAX = 1
+RECORD_GRADE_RATE_LIMIT_WINDOW_SECONDS = 300
 
 
-async def grade_pending_records() -> dict[str, int]:
+def _rate_limit_authenticated_request(
+    request: Request,
+    bucket: str,
+    default_limit: int,
+    default_window: int,
+) -> None:
+    """Throttle by resolved account, never by a caller-controlled date."""
+    context = auth_lib.current_auth(request)
+    if context is None:
+        # The application gate runs before route handlers in production. This
+        # fallback keeps direct route tests bounded without treating an IP as
+        # an authorization signal.
+        key = auth_lib.client_fingerprint(request)
+    else:
+        key = auth_lib.token_fingerprint(str(context.user_id))
+    limit, window = auth_lib.rate_limit_config(
+        bucket.upper(), default_limit, default_window
+    )
+    auth_lib.enforce_rate_limit(bucket, key, limit, window)
+
+
+def _validate_slate_date(slate_date: date | None) -> date:
+    today = datetime.now(EASTERN).date()
+    target = slate_date or today
+    if (
+        target.year != current_season()
+        or abs((target - today).days) > SLATE_DATE_WINDOW_DAYS
+    ):
+        raise MoneylineError(
+            "unsupported_slate_date",
+            f"Slate dates are limited to the current season and a "
+            f"{SLATE_DATE_WINDOW_DAYS}-day window around today.",
+            400,
+        )
+    return target
+
+
+def _record_operator_ids() -> frozenset[str]:
+    """Return the explicitly configured settlement operator allowlist.
+
+    The account model intentionally has no user-controlled role field. Manual
+    settlement is therefore fail-closed unless deployment configuration names
+    the operator account IDs.
+    """
+    configured = os.getenv("MONEYLINE_RECORD_OPERATOR_IDS", "")
+    return frozenset(
+        value.strip() for value in configured.split(",") if value.strip()
+    )
+
+
+def _require_record_operator(request: Request) -> auth_lib.AuthContext:
+    context = auth_lib.current_auth(request)
+    if context is None or str(context.user_id) not in _record_operator_ids():
+        raise MoneylineError(
+            "operator_required",
+            "Only an authorized record operator can start settlement.",
+            403,
+        )
+    return context
+
+
+_grade_task: asyncio.Task[dict[str, int]] | None = None
+_grade_task_lock = asyncio.Lock()
+
+
+async def _grade_pending_records_once() -> dict[str, int]:
     if not await asyncio.to_thread(database_available):
         return {
             "checked": 0,
@@ -334,6 +404,28 @@ async def grade_pending_records() -> dict[str, int]:
         "parlays_graded": parlay_result["graded"],
         "parlays_voided": parlay_result["voided"],
     }
+
+
+async def grade_pending_records() -> dict[str, int]:
+    """Run at most one settlement pass process-wide.
+
+    Callers share the in-flight result rather than queueing duplicate full
+    ledger scans. Shielding keeps the scheduler's work alive if a request
+    disconnects while waiting for it.
+    """
+    global _grade_task
+    async with _grade_task_lock:
+        task = _grade_task
+        if task is None or task.done():
+            task = asyncio.create_task(_grade_pending_records_once())
+            _grade_task = task
+    try:
+        return await asyncio.shield(task)
+    finally:
+        if task.done():
+            async with _grade_task_lock:
+                if _grade_task is task:
+                    _grade_task = None
 
 
 async def _grade_pending_parlays() -> dict[str, int]:
@@ -875,7 +967,14 @@ async def slate(
     request: Request,
     slate_date: date | None = Query(default=None, alias="date"),
 ) -> dict[str, Any]:
-    data = await get_slate(slate_date)
+    _rate_limit_authenticated_request(
+        request,
+        "slate",
+        SLATE_RATE_LIMIT_MAX,
+        SLATE_RATE_LIMIT_WINDOW_SECONDS,
+    )
+    target_date = _validate_slate_date(slate_date)
+    data = await get_slate(target_date)
     request.state.cache_status = data.get("cache", "n/a")
     persisted = False
     if data.get("mode") == "live":
@@ -895,7 +994,6 @@ async def slate(
                 data.get("date"),
                 today_et,
             )
-        request.app.state.slate_grade_task = asyncio.create_task(grade_pending_records())
     data["record_persisted"] = persisted
     return data
 
@@ -1098,7 +1196,14 @@ async def live_record(request: Request) -> dict[str, Any]:
 
 
 @app.post("/api/record/grade")
-async def grade_record() -> dict[str, Any]:
+async def grade_record(request: Request) -> dict[str, Any]:
+    _require_record_operator(request)
+    _rate_limit_authenticated_request(
+        request,
+        "record_grade",
+        RECORD_GRADE_RATE_LIMIT_MAX,
+        RECORD_GRADE_RATE_LIMIT_WINDOW_SECONDS,
+    )
     if not await asyncio.to_thread(database_available):
         raise MoneylineError(
             "record_unavailable",

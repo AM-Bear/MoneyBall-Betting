@@ -97,7 +97,7 @@ class GameNotFound(FeedUnavailable):
 
 
 class AsyncTTLCache:
-    """Single-flight TTL cache with a bounded wait.
+    """Single-flight, bounded TTL cache with a bounded wait.
 
     Only one loader runs per key — without that, a cold ``/api/slate`` would let
     every concurrent request fan out its own 30-call roster sweep. But a caller
@@ -115,15 +115,48 @@ class AsyncTTLCache:
       ``historical_slate`` fallback takes over.
     """
 
-    def __init__(self, ttl_seconds: int, deadline_seconds: float | None = None) -> None:
+    def __init__(
+        self,
+        ttl_seconds: int,
+        deadline_seconds: float | None = None,
+        max_entries: int | None = None,
+    ) -> None:
         self.ttl_seconds = ttl_seconds
         self.deadline_seconds = (
             deadline_seconds
             if deadline_seconds is not None
             else float(os.getenv("FEED_DEADLINE_SECONDS", "25"))
         )
+        configured_max_entries = (
+            max_entries
+            if max_entries is not None
+            else int(os.getenv("CACHE_MAX_ENTRIES", "256"))
+        )
+        self.max_entries = max(configured_max_entries, 1)
         self._items: dict[str, tuple[float, Any]] = {}
         self._inflight: dict[str, asyncio.Task[Any]] = {}
+
+    def _prune(self, now: float, keep: str | None = None) -> None:
+        """Drop expired values and then evict oldest values over the hard cap.
+
+        ``keep`` is used while refreshing an expired key: stale data for that
+        key must remain available if the refresh hits its caller deadline.
+        """
+        for key, (stored_at, _value) in tuple(self._items.items()):
+            if key != keep and now - stored_at >= self.ttl_seconds:
+                self._items.pop(key, None)
+
+        overflow = len(self._items) - self.max_entries
+        if overflow > 0:
+            oldest = sorted(
+                (
+                    (stored_at, key)
+                    for key, (stored_at, _value) in self._items.items()
+                    if key != keep
+                )
+            )
+            for _stored_at, key in oldest[:overflow]:
+                self._items.pop(key, None)
 
     def _fresh(self, key: str) -> tuple[Any, bool] | None:
         cached = self._items.get(key)
@@ -135,6 +168,9 @@ class AsyncTTLCache:
         try:
             value = await loader()
             self._items[key] = (time.monotonic(), value)
+            # Keep the value just loaded even when tests or callers configure
+            # a zero TTL; it remains useful as stale data during a refresh.
+            self._prune(time.monotonic(), keep=key)
             return value
         finally:
             self._inflight.pop(key, None)
@@ -142,6 +178,10 @@ class AsyncTTLCache:
     async def get_or_set(
         self, key: str, loader: Callable[[], Awaitable[Any]]
     ) -> tuple[Any, bool]:
+        now = time.monotonic()
+        # Preserve only the requested stale value while its refresh is in
+        # flight; all other expired values can be reclaimed immediately.
+        self._prune(now, keep=key)
         hit = self._fresh(key)
         if hit is not None:
             return hit
