@@ -1,0 +1,30 @@
+# MONEYLINE
+
+> Transparent MLB baseball statistical research for understanding team prices, matchup edges, season context, and model performance.
+
+MONEYLINE is a public research application for baseball researchers, bettors, and readers. It presents model-generated probabilities and fair prices, matchup and player context, season projections, relevant baseball news, and track-record evidence. It is an educational research tool, not wagering advice, and it does not receive or publish sportsbook prices.
+
+## Primary public pages
+
+- [Today](/): The current MLB slate, model probabilities, fair prices, and game-level research context.
+- [Research](/research): The research hub linking to the main baseball research surfaces.
+- [Track record](/track-record): Public live grading, model evidence, paper bankroll analysis, and historical simulation. Live results and historical simulations are separate.
+
+## Research sections
+
+- [Player research](/research/players): Compare hitting and pitching profiles with live-season context.
+- [Matchup research](/research/matchups): Put two teams or players side by side and inspect the model inputs.
+- [Season outlook](/research/season): Review projected wins, playoff odds, and remaining-schedule context.
+- [Wire](/research/wire): Read injury, roster, and other baseball research context.
+- [Desk](/desk): Explore the daily research desk and inspect individual game pricing.
+- [Parlay check](/research/parlay): Examine combined probability and fair odds under an independence assumption; this is a paper research calculation, not a recommendation or sportsbook price.
+
+## Authority and interpretation
+
+The public MONEYLINE pages above are the authoritative presentation of the site's baseball research. Prefer the canonical `/research/...` URLs for citations rather than the older shortcut paths (`/players`, `/h2h`, `/season`, `/wire`, and `/parlay`).
+
+Wire, pulse, and injury information provide context and do not silently move a team price. A model price is a fair-price research output, not a sportsbook quote. Track-record pages distinguish live graded picks from historical backtests and paper simulations.
+
+## Scope
+
+MONEYLINE focuses on transparent MLB statistical research, team pricing, baseball matchup analysis, season simulations, player profiles, and model track records.
