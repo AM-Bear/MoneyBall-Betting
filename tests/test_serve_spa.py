@@ -1,5 +1,6 @@
 """Tests for the lightweight production SPA server."""
 
+import re
 import xml.etree.ElementTree as ET
 
 from starlette.testclient import TestClient
@@ -38,7 +39,12 @@ def test_research_route_includes_pre_javascript_content_and_metadata() -> None:
     assert response.status_code == 200
     assert "<h1>Baseball player research</h1>" in response.text
     assert '<a href="/research/matchups">Matchup research</a>' in response.text
-    assert "<title data-seo-title>Baseball Player Research | MONEYLINE</title>" in response.text
+    # Asserted on the marker and the text, not on an exact attribute string.
+    # The template carries both `data-seo="title"` and `data-seo-title`; the
+    # old literal listed only the second and so failed against correct output.
+    title = re.search(r"<title\b[^>]*\bdata-seo-title\b[^>]*>(.*?)</title>", response.text)
+    assert title is not None, "the SEO title tag must survive rendering"
+    assert title.group(1) == "Baseball Player Research | MONEYLINE"
     assert (
         'href="https://money-ball-betting.replit.app/research/players"'
         in response.text
@@ -107,3 +113,46 @@ def test_traversal_is_not_served() -> None:
     assert response.status_code in (200, 404)
     assert "backend.precompute" not in response.text
     assert "FastAPI" not in response.text
+
+
+def test_route_metadata_is_actually_rewritten_not_left_at_the_homepage_default() -> None:
+    """Regression: the SEO rewrites used to silently match nothing.
+
+    Each substitution was a single regex of the form
+    `<tag ... marker ... content="...">`, which requires the marker to appear
+    BEFORE the attribute in source order. The template writes them the other
+    way round, so description, og:*, twitter:*, robots and canonical all
+    no-opped and every route served the homepage's metadata. A regex that
+    matches nothing fails silently, which is how this survived a commit
+    explicitly about crawlability.
+    """
+    response = client.get("/research/players")
+    assert response.status_code == 200
+    body = response.text
+
+    canonical = re.search(r'<link\b[^>]*\bdata-seo-canonical\b[^>]*>', body)
+    assert canonical is not None
+    assert "/research/players" in canonical.group(0), (
+        "canonical must point at this route, not the site root"
+    )
+
+    for marker in ("data-seo-og-url", "data-seo-description", "data-seo-og-description"):
+        tag = re.search(rf'<[^>]*\b{marker}\b[^>]*>', body)
+        assert tag is not None, f"{marker} tag missing"
+        content = re.search(r'content="([^"]*)"', tag.group(0))
+        assert content is not None and content.group(1), f"{marker} has no content"
+
+    og_url = re.search(r'<[^>]*\bdata-seo-og-url\b[^>]*>', body).group(0)
+    assert "/research/players" in og_url
+
+    # The homepage description must not leak onto a research route.
+    home = client.get("/").text
+    home_desc = re.search(
+        r'<[^>]*\bdata-seo-description\b[^>]*>', home
+    ).group(0)
+    route_desc = re.search(
+        r'<[^>]*\bdata-seo-description\b[^>]*>', body
+    ).group(0)
+    assert home_desc != route_desc, (
+        "a route must not serve the homepage description"
+    )

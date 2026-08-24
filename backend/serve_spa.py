@@ -23,6 +23,7 @@ from starlette.responses import (
 from starlette.routing import Route
 
 from backend.seo import (
+    SEO_CONTENT_PLACEHOLDER,
     SITEMAP_PATH,
     is_public_client_route,
     not_found_html,
@@ -64,15 +65,25 @@ async def spa(request: Request) -> Response:
                 else {"Cache-Control": "no-cache"}
             )
             return FileResponse(candidate, headers=headers)
-        # Production builds include a pre-rendered HTML shell for every
-        # public route, so crawlers receive route-specific head metadata
-        # before the client application loads.
+        # The build writes an index.html under every public route. It does
+        # NOT substitute the SEO placeholder -- that happens per request in
+        # backend.seo.render_index -- so the per-route file is usually still
+        # an empty shell. This branch used to serve it verbatim on the
+        # assumption that the build had pre-rendered it, which handed crawlers
+        # a page with no route metadata: precisely what the branch exists to
+        # prevent. Trust the file only when it is genuinely rendered.
         route_index = (DIST_DIR / path / "index.html").resolve()
         try:
             route_inside = route_index.is_relative_to(DIST_DIR)
         except ValueError:
             route_inside = False
         if route_inside and route_index.is_file():
+            shell = route_index.read_text(encoding="utf-8")
+            if SEO_CONTENT_PLACEHOLDER in shell:
+                return HTMLResponse(
+                    render_index(shell, path),
+                    headers={"Cache-Control": "no-cache"},
+                )
             return FileResponse(route_index, headers={"Cache-Control": "no-cache"})
         # A missing build asset (or any file-like path) must 404 rather than
         # silently serving index.html to a JS/CSS request.

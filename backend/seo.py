@@ -17,6 +17,11 @@ from urllib.parse import urljoin
 SITE_URL = os.getenv("MONEYLINE_SITE_URL", "https://money-ball-betting.replit.app").rstrip(
     "/"
 )
+# The marker the Vite template ships in place of route content. Exported
+# because backend.serve_spa has to recognise an UNrendered shell, and two
+# copies of this string would drift.
+SEO_CONTENT_PLACEHOLDER = "<!-- server-seo-content -->"
+
 SITEMAP_PATH = "/sitemap.xml"
 
 
@@ -390,6 +395,35 @@ def _seo_content(route: RouteSeo) -> str:
     )
 
 
+def _set_seo_attribute(markup: str, marker: str, attribute: str, value: str) -> str:
+    """Rewrite ``attribute`` on the first tag carrying ``marker``.
+
+    Order-independent, deliberately. The previous implementation matched
+    ``<tag ... marker ... attribute="...">`` in one regex, which required the
+    marker to appear BEFORE the attribute in source order. The template writes
+    them the other way round -- ``<meta name="description" content="..."
+    data-seo="description" data-seo-description />`` -- so every description,
+    og:*, twitter:*, robots and canonical substitution silently matched
+    nothing and every route served the homepage's metadata. A no-op regex
+    fails quietly, which is why this survived a commit explicitly about
+    crawlability.
+    """
+    tag_pattern = re.compile(r"<[^>]*\b" + re.escape(marker) + r"\b[^>]*>")
+    match = tag_pattern.search(markup)
+    if not match:
+        return markup
+    escaped = html.escape(value, quote=True)
+    new_tag, replaced = re.subn(
+        rf'(\b{re.escape(attribute)}=")[^"]*(")',
+        lambda inner: f"{inner.group(1)}{escaped}{inner.group(2)}",
+        match.group(0),
+        count=1,
+    )
+    if not replaced:
+        return markup
+    return markup[: match.start()] + new_tag + markup[match.end() :]
+
+
 def render_index(index_html: str, path: str) -> str:
     """Inject route-specific head tags and readable content into index.html."""
     route = route_seo_for(path) or ROUTE_SEO["/"]
@@ -414,24 +448,12 @@ def render_index(index_html: str, path: str) -> str:
         ("data-seo-twitter-description", route.description),
         ("data-seo-robots", robots),
     ):
-        rendered = re.sub(
-            rf'(<[^>]*\b{marker}\b[^>]*\bcontent=")[^"]*(")',
-            lambda match, value=value: (
-                f"{match.group(1)}{html.escape(value, quote=True)}{match.group(2)}"
-            ),
-            rendered,
-            count=1,
-        )
-    rendered = re.sub(
-        r'(<link\b[^>]*\bdata-seo-canonical\b[^>]*\bhref=")[^"]*(")',
-        lambda match: f"{match.group(1)}{html.escape(canonical, quote=True)}{match.group(2)}",
-        rendered,
-        count=1,
-    )
+        rendered = _set_seo_attribute(rendered, marker, "content", value)
+    rendered = _set_seo_attribute(rendered, "data-seo-canonical", "href", canonical)
 
     content = _seo_content(route)
-    if "<!-- server-seo-content -->" in rendered:
-        rendered = rendered.replace("<!-- server-seo-content -->", content, 1)
+    if SEO_CONTENT_PLACEHOLDER in rendered:
+        rendered = rendered.replace(SEO_CONTENT_PLACEHOLDER, content, 1)
     else:
         rendered = rendered.replace(
             '<div id="root"></div>', f'<div id="root">{content}</div>', 1
