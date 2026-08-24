@@ -186,7 +186,7 @@ function OmniSearch() {
                     key={`${g.title}-${i}`}
                     type="button"
                     onClick={h.go}
-                    className="w-full text-left px-3 py-2 text-sm font-mono hover:bg-accent focus:bg-accent outline-none flex justify-between items-baseline gap-2"
+                    className="moneyline-focus-ring w-full text-left px-3 py-2 text-sm font-mono hover:bg-accent flex justify-between items-baseline gap-2"
                   >
                     <span className="font-bold truncate">{h.label}</span>
                     <span className="text-[9px] text-muted-foreground uppercase shrink-0">{h.sub}</span>

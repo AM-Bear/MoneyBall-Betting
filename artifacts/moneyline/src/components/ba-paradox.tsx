@@ -22,10 +22,10 @@ export function BaParadoxPanel() {
   return (
     <div className="moneyline-panel lg:col-span-3">
       <div className="flex justify-between items-center mb-4">
-        <div className="moneyline-section-header w-1/3">THE BA PARADOX</div>
+        <h2 className="moneyline-section-header w-1/3">THE BA PARADOX</h2>
         <div className="flex items-center gap-3 text-sm font-mono">
           <span className={cn("transition-colors", !showBa ? "text-primary" : "text-muted-foreground")}>OBP + SLG</span>
-          <Switch checked={showBa} onCheckedChange={setShowBa} />
+          <Switch aria-label="Include batting average in the model" checked={showBa} onCheckedChange={setShowBa} />
           <span className={cn("transition-colors", showBa ? "text-primary" : "text-muted-foreground")}>+ BA</span>
         </div>
       </div>

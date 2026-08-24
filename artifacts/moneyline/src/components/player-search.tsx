@@ -114,7 +114,7 @@ export function PlayerSearch({
                 key={`${hit.group}-${hit.player_id}`}
                 type="button"
                 onClick={() => pick(hit)}
-                className="w-full text-left px-3 py-2 hover:bg-accent focus:bg-accent outline-none flex items-center justify-between gap-2"
+                className="moneyline-focus-ring w-full text-left px-3 py-2 hover:bg-accent flex items-center justify-between gap-2"
               >
                 <PlayerIdentity size="sm" name={hit.name} team={hit.team_name} position={hit.position} />
                 <span className="text-[9px] font-mono text-muted-foreground uppercase">

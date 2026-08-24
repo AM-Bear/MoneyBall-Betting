@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useId, useState, useEffect } from "react";
 import { Badge } from "./ui/badge";
 import { Input } from "./ui/input";
 import { formatOdds, formatProb } from "./slate-rail";
@@ -36,6 +36,10 @@ export function EdgeFinder({
   /** Today cards already display fair prices; only price a comparison after a manual line is entered. */
   deferUntilBookLine?: boolean;
 }) {
+  const fieldId = useId().replace(/:/g, "");
+  const lineAId = `${fieldId}-line-a`;
+  const lineBId = `${fieldId}-line-b`;
+  const opponentId = `${fieldId}-opponent`;
   const [lineA, setLineA] = useState<string>("");
   const [lineB, setLineB] = useState<string>("");
   const [teamBId, setTeamBId] = useState<{team: string, year: number}>({ team: "NYY", year: 2002 });
@@ -119,7 +123,7 @@ export function EdgeFinder({
 
   return (
     <div className="moneyline-panel lg:col-span-1 min-h-[400px]">
-      <div className="moneyline-section-header mb-4">EDGE FINDER</div>
+      <h2 className="moneyline-section-header mb-4">EDGE FINDER</h2>
       
       <div className="flex flex-col gap-4 flex-1">
         
@@ -132,8 +136,9 @@ export function EdgeFinder({
               <span className="text-primary">{result?.fair_line_a != null ? formatOdds(result.fair_line_a) : "..."}</span>
             </div>
             <div className="mt-2">
-              <label className="text-[10px] uppercase text-muted-foreground">Book Line</label>
+              <label htmlFor={lineAId} className="text-[10px] uppercase text-muted-foreground">Book Line · {labelA}</label>
               <Input 
+                id={lineAId}
                 value={lineA} 
                 onChange={(e) => setLineA(e.target.value)} 
                 placeholder="-110" 
@@ -145,18 +150,23 @@ export function EdgeFinder({
           <div className="flex flex-col gap-2 p-3 bg-background border border-border">
             <div className="text-xs font-mono font-bold truncate h-6 relative group">
               {(activeSlateGame || overrideB) ? labelB : (
-                <select 
-                  className="w-full bg-transparent outline-none appearance-none cursor-pointer truncate pr-4 text-muted-foreground hover:text-foreground transition-colors"
-                  value={`${teamBId.team} ${teamBId.year}`}
-                  onChange={(e) => {
-                    const match = e.target.value.match(/^([A-Za-z]+)\s+(\d{4})$/);
-                    if (match) setTeamBId({ team: match[1], year: parseInt(match[2], 10) });
-                  }}
-                >
-                  {teamsData?.teams.map(t => (
-                    <option key={t.label} value={t.label}>{t.label}</option>
-                  ))}
-                </select>
+                <>
+                  <label htmlFor={opponentId} className="sr-only">Opponent team and season</label>
+                  <select
+                    id={opponentId}
+                    aria-label="Opponent team and season"
+                    className="moneyline-focus-ring w-full bg-transparent appearance-none cursor-pointer truncate pr-4 text-muted-foreground hover:text-foreground transition-colors"
+                    value={`${teamBId.team} ${teamBId.year}`}
+                    onChange={(e) => {
+                      const match = e.target.value.match(/^([A-Za-z]+)\s+(\d{4})$/);
+                      if (match) setTeamBId({ team: match[1], year: parseInt(match[2], 10) });
+                    }}
+                  >
+                    {teamsData?.teams.map(t => (
+                      <option key={t.label} value={t.label}>{t.label}</option>
+                    ))}
+                  </select>
+                </>
               )}
             </div>
             <div className="flex justify-between text-xs text-muted-foreground font-mono">
@@ -164,8 +174,9 @@ export function EdgeFinder({
               <span className="text-primary">{result?.fair_line_b != null ? formatOdds(result.fair_line_b) : "..."}</span>
             </div>
             <div className="mt-2">
-              <label className="text-[10px] uppercase text-muted-foreground">Book Line</label>
+              <label htmlFor={lineBId} className="text-[10px] uppercase text-muted-foreground">Book Line · {labelB}</label>
               <Input 
+                id={lineBId}
                 value={lineB} 
                 onChange={(e) => setLineB(e.target.value)} 
                 placeholder="+100" 

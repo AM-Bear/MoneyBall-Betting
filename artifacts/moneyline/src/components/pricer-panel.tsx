@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Link } from "wouter";
 import { Badge } from "./ui/badge";
 import { Slider } from "./ui/slider";
@@ -27,10 +27,11 @@ function StatSlider({
   onChange: (v: number) => void;
   disabled?: boolean;
 }) {
+  const labelId = useId().replace(/:/g, "");
   return (
     <div className="flex flex-col gap-1">
       <div className="flex justify-between items-center text-xs font-mono">
-        <span className="text-muted-foreground">{label}</span>
+        <span id={labelId} className="text-muted-foreground">{label}</span>
         <span className={disabled ? "text-muted-foreground/50" : ""}>{formatStat(value)}</span>
       </div>
       <Slider
@@ -39,6 +40,7 @@ function StatSlider({
         max={max}
         step={0.001}
         value={[value]}
+        aria-labelledby={labelId}
         onValueChange={(v) => onChange(v[0])}
         className="my-1"
       />
@@ -74,6 +76,7 @@ export function PricerPanel({
   } | null;
 }) {
   const [frontOffice, setFrontOffice] = useState(false);
+  const frontOfficeLabelId = useId().replace(/:/g, "");
 
   // If front office is disabled, we always show the original data
   const currentInputs = (frontOffice && customInputs) ? customInputs : data.inputs;
@@ -133,10 +136,10 @@ export function PricerPanel({
               RESET
             </button>
           )}
-          <span className={cn("transition-colors", !frontOffice ? "text-muted-foreground" : "text-primary font-bold")}>
+          <span id={frontOfficeLabelId} className={cn("transition-colors", !frontOffice ? "text-muted-foreground" : "text-primary font-bold")}>
             FRONT OFFICE
           </span>
-          <Switch checked={frontOffice} onCheckedChange={handleToggle} />
+          <Switch aria-labelledby={frontOfficeLabelId} checked={frontOffice} onCheckedChange={handleToggle} />
         </div>
       </div>
 

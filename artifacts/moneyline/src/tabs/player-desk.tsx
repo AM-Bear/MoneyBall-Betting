@@ -17,9 +17,9 @@ function PoolList({
   const players = (data?.players || []).slice(0, 10);
   return (
     <div className="flex flex-col gap-1">
-      <div className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+      <h2 className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
         {group === "hitting" ? "QUALIFIED BATS · BY PA" : "QUALIFIED ARMS · BY IP"}
-      </div>
+      </h2>
       {isLoading ? (
         <div className="text-xs font-mono text-muted-foreground animate-pulse p-2">LOADING POOL…</div>
       ) : (
@@ -51,7 +51,7 @@ export default function PlayerDeskTab() {
   return (
     <div className="max-w-7xl mx-auto flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="moneyline-section-header w-full sm:w-1/3">PLAYER DESK · {liveSeason ?? ""} LIVE</div>
+        <h1 className="moneyline-section-header w-full sm:w-1/3">PLAYER DESK · {liveSeason ?? ""} LIVE</h1>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

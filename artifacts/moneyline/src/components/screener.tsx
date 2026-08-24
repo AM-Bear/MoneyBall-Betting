@@ -52,11 +52,11 @@ export function ScreenerPanel() {
   return (
     <div className="moneyline-panel lg:col-span-3">
       <div className="flex justify-between items-center mb-4">
-        <div className="moneyline-section-header w-1/3">UNDERVALUED ASSET SCREENER</div>
+        <h2 className="moneyline-section-header w-1/3">UNDERVALUED ASSET SCREENER</h2>
         
         <div className="flex items-center gap-4">
           <Select value={year.toString()} onValueChange={(v) => setYear(parseInt(v, 10))}>
-            <SelectTrigger className="w-[100px] h-8 text-xs font-mono rounded-none">
+            <SelectTrigger aria-label="Select season for undervalued asset screener" className="w-[100px] h-8 text-xs font-mono rounded-none">
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="rounded-none">

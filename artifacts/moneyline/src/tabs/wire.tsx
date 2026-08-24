@@ -65,7 +65,7 @@ export default function WireTab() {
   return (
     <div className="max-w-5xl mx-auto flex flex-col gap-4 min-h-full">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="moneyline-section-header w-full sm:w-1/3">THE WIRE · MERGED FEED</div>
+        <h1 className="moneyline-section-header w-full sm:w-1/3">THE WIRE · MERGED FEED</h1>
         <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
           {wire.data?.updated_at && <span>UPDATED {formatAsOf(wire.data.updated_at)}</span>}
         </div>

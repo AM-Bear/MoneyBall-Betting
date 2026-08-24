@@ -139,7 +139,7 @@ function PlayersMode() {
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             <div className="moneyline-panel lg:col-span-2 flex flex-col gap-3">
-              <div className="moneyline-section-header">PERCENTILES · A (BLUE) VS B (AMBER)</div>
+              <h2 className="moneyline-section-header">PERCENTILES · A (BLUE) VS B (AMBER)</h2>
               {Object.entries(data.percentile_pairs || {}).map(([key, pair]: [string, any]) => (
                 <PercentileBarPair key={key} label={DELTA_LABELS[key] || key.toUpperCase()} a={pair[0]} b={pair[1]} />
               ))}
@@ -149,7 +149,7 @@ function PlayersMode() {
             </div>
 
             <div className="moneyline-panel lg:col-span-1">
-              <div className="moneyline-section-header mb-3">DELTA (A − B)</div>
+              <h2 className="moneyline-section-header mb-3">DELTA (A − B)</h2>
               <div className="flex flex-col gap-1 font-mono text-xs">
                 {Object.entries(data.deltas || {}).map(([key, d]: [string, any]) => (
                   <div key={key} className="flex justify-between border-b border-border/40 py-1">
@@ -213,11 +213,13 @@ function TeamSelect({
   histTeams: any[];
   liveSeason: number | undefined;
 }) {
+  const selectId = `team-select-${label.toLowerCase().replace(/\s+/g, "-")}`;
   return (
     <div className="flex flex-col gap-1 font-mono text-xs">
-      <label className="text-[10px] uppercase text-muted-foreground">{label}</label>
+      <label htmlFor={selectId} className="text-[10px] uppercase text-muted-foreground">{label}</label>
       <select
-        className="bg-background border border-border px-2 py-1.5 focus:outline-none focus:border-primary"
+        id={selectId}
+        className="moneyline-focus-ring bg-background border border-border px-2 py-1.5 focus:border-primary"
         value={value || ""}
         onChange={(e) => onChange(e.target.value)}
       >
@@ -309,7 +311,7 @@ function TeamsMode() {
           <div className="lg:col-span-2 flex flex-col gap-4">
             {slateGame && (
               <div className="moneyline-panel flex flex-col gap-3">
-                <div className="moneyline-section-header">TONIGHT ON THE SLATE · {slateGame.away} @ {slateGame.home} · {slateGame.time_et}</div>
+                <h2 className="moneyline-section-header">TONIGHT ON THE SLATE · {slateGame.away} @ {slateGame.home} · {slateGame.time_et}</h2>
                 {slateGame.probables && (
                   <div className="font-mono text-xs flex flex-wrap gap-4">
                     <span>
@@ -386,7 +388,7 @@ export default function H2HTab() {
   return (
     <div className="max-w-7xl mx-auto flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="moneyline-section-header w-full sm:w-1/3">HEAD-TO-HEAD</div>
+        <h1 className="moneyline-section-header w-full sm:w-1/3">HEAD-TO-HEAD</h1>
         <div className="flex items-center gap-2">
           {(["players", "teams"] as const).map((m) => (
             <button

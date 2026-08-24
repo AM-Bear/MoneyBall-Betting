@@ -69,7 +69,7 @@ export default function SeasonDeskTab() {
   if (sim.isLoading)
     return (
       <div className="max-w-7xl mx-auto flex flex-col gap-4">
-        <div className="moneyline-section-header w-1/3">SEASON DESK · SIMULATING {liveSeason ?? "SEASON"}…</div>
+        <h1 className="moneyline-section-header w-1/3">SEASON DESK · SIMULATING {liveSeason ?? "SEASON"}…</h1>
         <PanelSkeleton />
       </div>
     );
@@ -123,7 +123,7 @@ export default function SeasonDeskTab() {
   return (
     <div className="max-w-7xl mx-auto flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="moneyline-section-header w-full sm:w-1/3">SEASON DESK · {d.season} SIMULATED ×{d.iterations}</div>
+        <h1 className="moneyline-section-header w-full sm:w-1/3">SEASON DESK · {d.season} SIMULATED ×{d.iterations}</h1>
         <div className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
           <span>SEED {d.seed}</span>
           <span>· {d.compute_ms}ms</span>
@@ -154,34 +154,52 @@ export default function SeasonDeskTab() {
           <thead className="bg-muted/30 text-[10px] text-muted-foreground uppercase border-b border-border">
             <tr>
               <th className="p-2 font-semibold">Team</th>
-              <th className="p-2 font-semibold text-right cursor-pointer hover:text-foreground" onClick={() => setSort("wins")}>
-                W–L {sortKey === "wins" && "▾"}
+              <th aria-sort={sortKey === "wins" ? "descending" : "none"} className="p-2 font-semibold text-right">
+                <button type="button" aria-label="Sort by wins" onClick={() => setSort("wins")} className="moneyline-focus-ring hover:text-foreground">
+                  W–L {sortKey === "wins" && "▾"}
+                </button>
               </th>
               <th className="p-2 font-semibold text-right">PACE</th>
-              <th className="p-2 font-semibold text-right cursor-pointer hover:text-foreground border-l border-border/50" onClick={() => setSort("expected_wins")}>
-                EXP W {sortKey === "expected_wins" && "▾"}
+              <th aria-sort={sortKey === "expected_wins" ? "descending" : "none"} className="p-2 font-semibold text-right border-l border-border/50">
+                <button type="button" aria-label="Sort by expected wins" onClick={() => setSort("expected_wins")} className="moneyline-focus-ring hover:text-foreground">
+                  EXP W {sortKey === "expected_wins" && "▾"}
+                </button>
               </th>
               <th className="p-2 font-semibold">DIST</th>
               <th className="p-2 font-semibold text-right">P5–P95</th>
-              <th className="p-2 font-semibold text-right cursor-pointer hover:text-foreground border-l border-border/50" onClick={() => setSort("playoff_odds")}>
-                PLAYOFF {sortKey === "playoff_odds" && "▾"}
+              <th aria-sort={sortKey === "playoff_odds" ? "descending" : "none"} className="p-2 font-semibold text-right border-l border-border/50">
+                <button type="button" aria-label="Sort by playoff odds" onClick={() => setSort("playoff_odds")} className="moneyline-focus-ring hover:text-foreground">
+                  PLAYOFF {sortKey === "playoff_odds" && "▾"}
+                </button>
               </th>
-              <th className="p-2 font-semibold text-right cursor-pointer hover:text-foreground" onClick={() => setSort("division_odds")}>
-                DIV {sortKey === "division_odds" && "▾"}
+              <th aria-sort={sortKey === "division_odds" ? "descending" : "none"} className="p-2 font-semibold text-right">
+                <button type="button" aria-label="Sort by division odds" onClick={() => setSort("division_odds")} className="moneyline-focus-ring hover:text-foreground">
+                  DIV {sortKey === "division_odds" && "▾"}
+                </button>
               </th>
-              <th className="p-2 font-semibold text-right cursor-pointer hover:text-foreground border-l border-border/50" onClick={() => setSort("delta_vs_pace")}>
-                Δ PACE {sortKey === "delta_vs_pace" && "▾"}
+              <th aria-sort={sortKey === "delta_vs_pace" ? "descending" : "none"} className="p-2 font-semibold text-right border-l border-border/50">
+                <button type="button" aria-label="Sort by change versus pace" onClick={() => setSort("delta_vs_pace")} className="moneyline-focus-ring hover:text-foreground">
+                  Δ PACE {sortKey === "delta_vs_pace" && "▾"}
+                </button>
               </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
             {rows.map((r: any) => (
               <Fragment key={r.team}>
-                <tr
-                  onClick={() => toggleDrill(r.team_id)}
-                  className={cn("cursor-pointer hover:bg-muted/20 transition-colors", drill === r.team_id && "bg-muted/30")}
-                >
-                  <td className="p-2 font-bold text-primary">{r.team}</td>
+                <tr className={cn("hover:bg-muted/20 transition-colors", drill === r.team_id && "bg-muted/30")}>
+                  <td className="p-2 font-bold text-primary">
+                    <button
+                      type="button"
+                      aria-label={`${drill === r.team_id ? "Hide" : "Show"} remaining schedule for ${r.name || r.team}`}
+                      aria-expanded={drill === r.team_id}
+                      aria-controls={`team-drill-${r.team_id}`}
+                      onClick={() => toggleDrill(r.team_id)}
+                      className="moneyline-focus-ring font-bold hover:underline underline-offset-2"
+                    >
+                      {r.team}
+                    </button>
+                  </td>
                   <td className="p-2 text-right tabular-nums">{r.wins}–{r.losses}</td>
                   <td className="p-2 text-right tabular-nums text-muted-foreground">{r.pace_wins.toFixed(1)}</td>
                   <td className="p-2 text-right tabular-nums font-bold border-l border-border/50">{r.expected_wins.toFixed(1)}</td>
@@ -198,7 +216,7 @@ export default function SeasonDeskTab() {
                   </td>
                 </tr>
                 {drill === r.team_id && (
-                  <tr>
+                  <tr id={`team-drill-${r.team_id}`}>
                     <td colSpan={9} className="p-0"><TeamDrill teamId={r.team_id} /></td>
                   </tr>
                 )}
@@ -209,7 +227,7 @@ export default function SeasonDeskTab() {
       </div>
 
       <div className="border border-border bg-background p-3 font-mono text-[10px] text-muted-foreground flex flex-col gap-1">
-        <div className="text-[9px] uppercase tracking-widest">ASSUMPTIONS — READ BEFORE QUOTING</div>
+        <h2 className="text-[9px] uppercase tracking-widest">ASSUMPTIONS — READ BEFORE QUOTING</h2>
         {(d.assumptions || []).map((a: string, i: number) => (
           <div key={i}>· {a}</div>
         ))}

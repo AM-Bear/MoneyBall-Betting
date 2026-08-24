@@ -106,6 +106,10 @@
     content: '';
     @apply h-px bg-border flex-1;
   }
+  .moneyline-focus-ring:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
   .moneyline-percentile-track {
     /* Spec: thin 4px tracks in #1f2530 with the pool median ticked. */
     @apply h-1 bg-border relative w-full;

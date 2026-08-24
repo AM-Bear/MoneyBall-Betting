@@ -101,7 +101,7 @@ export default function ParlayLabTab() {
   if (slate.data?.mode !== "live")
     return (
       <div className="max-w-7xl mx-auto flex flex-col gap-4">
-        <div className="moneyline-section-header w-1/3">PARLAY CHECK</div>
+        <h1 className="moneyline-section-header w-1/3">PARLAY CHECK</h1>
         <div className="moneyline-panel items-center justify-center text-center p-10 font-mono">
           <div className="text-warning text-sm uppercase tracking-widest mb-2">NO LIVE SLATE</div>
           <div className="text-xs text-muted-foreground max-w-sm">
@@ -115,7 +115,7 @@ export default function ParlayLabTab() {
   return (
     <div className="max-w-7xl mx-auto flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="moneyline-section-header w-full sm:w-1/3">PARLAY CHECK · 2–6 LEGS FROM TODAY'S SLATE</div>
+        <h1 className="moneyline-section-header w-full sm:w-1/3">PARLAY CHECK · 2–6 LEGS FROM TODAY'S SLATE</h1>
         <div className="font-mono text-[10px] text-muted-foreground">{result?.price_basis || "SEASON MODEL PROBABILITIES (NOT ADJ)."}</div>
       </div>
       <div className="border border-border bg-muted/20 p-3 text-xs leading-5 text-muted-foreground">
@@ -125,7 +125,7 @@ export default function ParlayLabTab() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Leg picker */}
         <div className="moneyline-panel lg:col-span-1 flex flex-col gap-2">
-          <div className="moneyline-section-header mb-1">TODAY'S GAMES — PICK A SIDE</div>
+          <h2 className="moneyline-section-header mb-1">TODAY'S GAMES — PICK A SIDE</h2>
           {tooMany && (
             <div className="border border-destructive/40 bg-destructive/10 px-2 py-1 font-mono text-[10px] text-destructive">
               SIX LEGS MAX — THE VIG COMPOUNDS FAST ENOUGH ALREADY
@@ -172,7 +172,7 @@ export default function ParlayLabTab() {
 
         {/* Slip + verdict */}
         <div className="moneyline-panel lg:col-span-2 flex flex-col gap-3">
-          <div className="moneyline-section-header">THE SLIP</div>
+          <h2 className="moneyline-section-header">THE SLIP</h2>
 
           {legs.length === 0 ? (
             <div className="flex-1 flex items-center justify-center font-mono text-sm text-muted-foreground p-8">
