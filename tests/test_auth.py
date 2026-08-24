@@ -309,6 +309,41 @@ def test_post_routes_require_a_session_before_body_validation(
     assert response.json()["error"]["code"] == "auth_required"
 
 
+def test_free_entitlement_cannot_call_paid_routes(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Premium checks use the resolved session identity, not test fallbacks."""
+    assert signup(client, "free-tier@example.com").status_code == 201
+    monkeypatch.setattr(main, "get_entitlement", lambda _user_id: None)
+
+    matchup_payload = {
+        "team_a": {"obp": 0.35, "slg": 0.43, "oobp": 0.31, "oslg": 0.38},
+        "team_b": {"obp": 0.34, "slg": 0.42, "oobp": 0.32, "oslg": 0.39},
+    }
+    parlay_payload = {
+        "legs": [
+            {"gamePk": "824235", "side": "away"},
+            {"gamePk": "822695", "side": "home"},
+        ]
+    }
+    requests = [
+        ("get", "/api/players"),
+        ("get", "/api/player/701656"),
+        ("get", "/api/compare/players?a=683002&b=701656"),
+        ("post", "/api/matchup", matchup_payload),
+        ("get", "/api/wire"),
+        ("post", "/api/parlay/price", parlay_payload),
+        ("post", "/api/parlay/log", parlay_payload),
+        ("get", "/api/season-sim"),
+        ("get", "/api/season-sim/team/147"),
+    ]
+
+    for method, path, *body in requests:
+        response = getattr(client, method)(path, json=body[0]) if body else getattr(client, method)(path)
+        assert response.status_code == 403, (method, path, response.text)
+        assert response.json()["error"]["code"] == "entitlement_required"
+
+
 def test_health_stays_public(client: TestClient) -> None:
     """The deployment startup probe has no credentials to present."""
     response = client.get("/api/health")

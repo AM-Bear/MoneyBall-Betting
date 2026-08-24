@@ -216,8 +216,16 @@ def _error_response(code: str, message: str, status_code: int) -> JSONResponse:
 
 
 async def get_current_user(request: Request) -> dict[str, Any]:
-    """Auth seam owned by Task 30; never infer identity from query/body data."""
-    user = getattr(request.state, "user", None) or request.scope.get("user")
+    """Return the identity resolved by the app-level session middleware.
+
+    The middleware deliberately owns cookie/session resolution.  Route
+    dependencies must consume that single context rather than inspecting
+    request data or a second, unsynchronised state slot.
+    """
+    auth_context = auth_lib.current_auth(request)
+    user = auth_context.user if auth_context else (
+        getattr(request.state, "user", None) or request.scope.get("user")
+    )
     # Existing feed/math tests run without a database or auth fixture. Keep
     # those deterministic unit tests focused on their route behavior; deployed
     # and database-backed requests still require the auth task's user context.
@@ -721,7 +729,10 @@ async def price_inputs(payload: PriceInput) -> dict[str, Any]:
 
 
 @app.post("/api/matchup")
-async def matchup(payload: MatchupInput) -> dict[str, Any]:
+async def matchup(
+    payload: MatchupInput,
+    _user: dict[str, Any] = Depends(require_feature("matchups")),
+) -> dict[str, Any]:
     team_a = predict_from_inputs(
         payload.team_a.obp,
         payload.team_a.slg,
@@ -1187,7 +1198,7 @@ async def wire(
 @app.post("/api/parlay/log")
 async def parlay_log(
     payload: ParlayInput,
-    user: dict[str, Any] = Depends(get_current_user),
+    user: dict[str, Any] = Depends(require_feature("parlay")),
 ) -> dict[str, Any]:
     if not await asyncio.to_thread(database_available):
         raise MoneylineError(
