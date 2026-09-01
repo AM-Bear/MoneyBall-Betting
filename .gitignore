@@ -51,3 +51,11 @@ Thumbs.db
 # Replit
 .cache/
 .local/
+
+# Secrets. This repo is public and the backend reads credentials from the
+# environment (backend/oauth.py, backend/billing.py, backend/mailer.py), yet
+# nothing here excluded env files. No .env has ever been committed -- this rule
+# exists so that stays true.
+.env
+.env.*
+!.env.example
