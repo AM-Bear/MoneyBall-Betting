@@ -89,3 +89,12 @@ When several sessions do run at once:
 - Recon and audit work is **read-only**. Report violations with `file:line`; do not silently
   fix them — a quiet fix hides that the bug existed.
 - Message the coordinating session with a short summary when done.
+
+## Vault (memory, not documentation)
+
+This repo is the truth for code and commands. Session memory lives in the Obsidian vault at
+`/Users/ashermills/Obsidian/M-Brain-Vault`: read its root `CLAUDE.md` before writing there,
+then `_state.md`, then `02 Projects/Moneyline/CLAUDE.md`. After a work session, add 3–4 lines
+to the top of `## Log` in `02 Projects/Moneyline/Moneyline.md` and a row in that folder's
+`Sessions.md`, as the vault contract says. If a vault note and this repo disagree, this repo
+wins — fix the note.
