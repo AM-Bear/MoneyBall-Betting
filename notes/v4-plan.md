@@ -56,8 +56,8 @@ No vendor, no spend, no new dependency. Highest value-per-line-of-code in the pl
 
 | # | Task | From | Effort | Notes |
 |---|---|---|---|---|
-| 1.1 | **Persist `entered_line`** | M1 | S | The user already types it (`game-card.tsx:264`); the grading path already reads it (`record_store.py:357,369`); nothing writes it. One column on insert. |
-| 1.2 | **De-vig both entered prices** | M2 | S | `novig_home = implied_home/(implied_home+implied_away)`. One line over three tested functions (`odds.py:21-25`, `:33-39`). |
+| 1.1 | **Persist `entered_line`** | M1 | S | The user already types it (`game-card.tsx:264`); the grading path already reads it (`record_store.py:357,369`); nothing writes it. One column on insert. **2026-09-02:** no insert to attach to — pick rows come from `store_slate_snapshot` (server-side, before any price is typed) and the typed price only reaches `/api/evaluate`; A (write onto the shared row) vs C (pull 4.2 forward): **Asher chose C, 2026-09-02** — built as `moneyline_bets` (user_id + game_pk, `line_home`/`line_away`, `entered_at`, `model_version`), `PUT /api/bets/{game_pk}`, card writes on blur; `moneyline_record_picks` untouched (tested byte-identical). **Clearing, Asher 2026-09-02:** an emptied input clears that side (explicit `null`; an absent side keeps); a row with both sides cleared is deleted — a cleared line is not a bet. 1.5 reads from here. |
+| 1.2 | **De-vig both entered prices** | M2 | S | `novig_home = implied_home/(implied_home+implied_away)`. One line over three tested functions (`odds.py:21-25`, `:33-39`). **2026-09-02:** done in code at c083645 (`no_vig_probabilities`, `no_vig_edge`, `tests/test_no_vig.py`), verified; surfacing is 1.3/1.4. |
 | 1.3 | **True edge vs no-vig, in the verdict** | M2 | M | `verdict.py:331` already receives `price_home` and `price_away` and does not use them together. Vigged-price edge understates every favourite edge. |
 | 1.4 | **Show hold % per game** | M2 | S | "Your book charges 5.2% here." Free, and immediately legible as a bettor's tool. |
 | 1.5 | **Closing-line entry + CLV** | M3 | M | The metric that converges fast enough to be meaningful. ⛓ 1.1 |
@@ -183,23 +183,34 @@ external dependency.**
 
 ## Decisions needed from Asher
 
-1. **Sharp or recreational?** (catalog §0.4) The most consequential product decision, and it
-   changes the priority of roughly half this plan. Recommendation: sharp positioning with a
-   recreational on-ramp — MONEYLINE's existing assets (verifiable ledger, calibration,
-   refusals) are worth nothing to a recreational bettor and a great deal to a sharp one.
-2. **Stripe classification.** ⚠️ Billing shipped three commits ago (`49ad107`). Stripe
-   restricts gambling-related businesses and handicapping sits in a grey zone; enforcement
-   arrives as a frozen account, not a warning. **Check before the marketing copy changes.**
-   Cheapest item on this list and the highest-probability way the repositioning hurts.
-3. **Affiliate revenue?** (catalog §6.2) It is how this category actually makes money, and it
-   directly conflicts with honest line-shopping rankings. Take it or don't, but decide before
-   building M6.
-4. **Odds vendor and budget.** $30/mo validates the thesis; four figures/mo runs it properly.
-5. **Does the classic 1962–2001 fit stay the headline model?** Recommendation: keep it as the
-   story and the teaching artifact, run the modern bundle as a graded challenger, let the
+**All six answered by Asher on 2026-09-02.** The answer is stated first; the original framing
+follows it so the reasoning survives.
+
+1. **Sharp, with a recreational on-ramp.** *(catalog §0.4)* As recommended. The most consequential
+   product decision, and it changes the priority of roughly half this plan: MONEYLINE's existing
+   assets — the verifiable ledger, calibration, refusals — are worth nothing to a recreational
+   bettor and a great deal to a sharp one.
+2. **Stripe: research first; no marketing copy change until Stripe answers in writing.** ⚠️
+   Billing shipped at `49ad107`. Stripe restricts gambling-related businesses and handicapping sits
+   in a grey zone; enforcement arrives as a frozen account, not a warning. The finding, the copy
+   constraints it implies, and a ready-to-send support question are in
+   `notes/stripe-classification.md`, which is **gitignored on purpose — this repo is public and
+   preparation for a conversation with Stripe should not be published to Stripe**; Asher sends the
+   question himself. Cheapest item on this list and the
+   highest-probability way the repositioning hurts.
+3. **No affiliate revenue.** *(catalog §6.2)* It is how this category actually makes money, and it
+   conflicts directly with honest line-shopping rankings — which are the product's whole claim.
+   **This constrains M6:** book comparison ships neutral, with no affiliate links.
+4. **No odds vendor yet.** $30/mo validates the thesis and four figures/mo runs it properly, but
+   nothing is spent until Phase 2 can measure whether the feed pays for itself. Revisit when the
+   backtest harness and calibration curves exist.
+5. **The classic 1962–2001 fit stays the headline model.** As recommended: keep it as the story and
+   the teaching artifact, run the modern bundle as a graded challenger under 2.4, and let the
    ledger decide (3.6).
-6. **ESPN host swap** — still open from `v3-plan.md`, now trivially resolved: the doctrine
-   objection was the only argument against it, and the doctrine is scratched.
+6. **ESPN host swap: go ahead — decided 2026-09-02, build after the commit.** The doctrine
+   objection was the only argument against it and that doctrine is scratched (Task 0). Not built in
+   the 2026-09-02 sessions: the working tree already carries a full commit's worth of review
+   surface for a public repo, so this lands in the session after Asher commits, alongside 1.5.
 
 ---
 

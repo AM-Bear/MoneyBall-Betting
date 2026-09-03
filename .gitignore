@@ -59,3 +59,9 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Working document for a conversation with Stripe: kept local on purpose.
+# This repo is public, and preparation for a discussion with a counterparty
+# should not be published to that counterparty. The finding it produced lives
+# in the vault and in notes/v4-plan.md decision 2.
+notes/stripe-classification.md

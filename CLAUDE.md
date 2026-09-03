@@ -6,11 +6,21 @@ Product doctrine, stack, and gotchas are shared with Replit Agent and live in:
 
 Read that first. Everything below is Claude-Code-specific and does not apply to Replit Agent.
 
+**Doctrine status (rewritten 2026-09-02):** the original *keyless data / no market prices /
+context never moves a price* doctrine was scratched on 2026-08-24. `replit.md` states the
+revised position — what survives (calibration, the graded record, refusals, receipts, no
+hardcoded coefficients) and what is scratched (data purity: odds feeds, third-party
+sources, context signals moving prices). Do not enforce the old rules against
+`notes/v4-plan.md`. Older notes in `notes/` and everything in `attached_assets/` still quote
+the old doctrine; where they disagree with `replit.md`, `replit.md` wins.
+
 ## Start here on a fresh session
 
-Read `notes/v3-plan.md` — the current ranked plan, what is broken, and what is already
-verified healthy. It supersedes the strategy docs in `attached_assets/`, which were written
-~9 commits behind `main` and understate what has shipped.
+Read `notes/v4-plan.md` — the current build order (Task 0, six phases, standing rules) and
+the gates between them. Then `notes/v3-plan.md`, which v4 supersedes for *sequencing* but
+which remains authoritative for what is broken and what is verified healthy in the tree.
+Both supersede the strategy docs in `attached_assets/`, which were written ~9 commits behind
+`main` and understate what has shipped.
 
 Supporting detail lives in `notes/map-model.md` (price chain, doctrine audit),
 `notes/map-data.md` (feeds, caches, TEAM_CODES, persistence), and `notes/map-surface.md`
@@ -22,10 +32,15 @@ what they already cover.
 1. **Plan before writing.** Read the relevant code, state the approach and files touched, surface open questions. Get agreement before editing. This is the cheapest place to catch a wrong turn.
 2. Write it in this workspace — these files ARE the Repl, there is no sync step.
 3. **Verify before reporting.** `python smoke_test.py` and `python -m pytest -q` must pass *before and after* any backend change. Add `pnpm typecheck` for TS.
-4. For anything touching price math, additionally diff `/api/price` output before/after to prove the change moved no number.
+4. **For anything touching price math, diff `/api/price` before and after against a declaration you wrote first.** State up front which prices should move and why, then prove the diff matches the declaration and nothing else moved.
+   - A change that should move nothing (refactor, additive route, feed fix) proves it with a byte-identical diff.
+   - A change that is *meant* to move prices — v4 Phase 3 does this deliberately — proves the number moved *only* where intended, and lands as a graded challenger under the champion–challenger registry (v4 2.4) before it touches the headline price. Promotion to the headline needs the Phase 2 backtest showing improvement on held-out seasons — log loss and Brier, never hit rate.
+   - Until 2.4 exists, no price-moving change lands at all. That is the gate, not an inconvenience.
 5. Deploy when the work is done and green — see "Deploying" below.
 
-Green tests prove no regression against known values. They do NOT prove new math is right, and they do not prove a write path exists — `entered_line` was read, tested, and never written in production. New formulas need one hand-checked case added to `verified_stats.json`.
+Green tests prove no regression against known values. They do NOT prove new math is right, and they do not prove a write path exists — `entered_line` was read, tested, and never written in production (v4 1.1 closes this). New formulas need one hand-checked case added to `verified_stats.json`.
+
+Ledger migrations stay `IF NOT EXISTS`; never rewrite existing rows. Rows graded under an older basis are marked as a distinct era via `model_version`, not regraded.
 
 ## Never invoke Replit Agent
 
@@ -49,7 +64,9 @@ every time:
   point at a commit is a deploy you cannot roll back.
 - No background worker or peer session is still editing the tree. Mid-flight files are
   how a half-finished component reaches production.
-- For anything touching price math, the `/api/price` diff proof is done first.
+- For anything touching price math, the `/api/price` diff-against-declaration proof (build
+  loop step 4) is done first, and anything that moves a price is deployed as a graded
+  challenger, not as the headline price.
 
 If a precondition fails, say so and stop rather than shipping past it.
 
