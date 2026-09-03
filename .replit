@@ -30,7 +30,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "python -m pytest -q && pnpm --filter @workspace/moneyline run smoke"
+args = "pnpm --filter @workspace/moneyline run build && python -m pytest -q && pnpm --filter @workspace/moneyline run smoke"
 
 [workflows.workflow.metadata]
 isValidation = true

@@ -159,3 +159,10 @@ overrides:
   # drizzle-kit uses esbuild internally on an older version that's vulnerable, this overrides it
   "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
   esbuild: "0.27.3"
+
+# pnpm 11 asks explicitly which dependencies may run build scripts; these two are the
+# only ones in the lockfile with one. Without this block every install rewrites this
+# file with placeholders and exits non-zero, which is what broke `pnpm typecheck`.
+allowBuilds:
+  '@anthropic-ai/claude-code': true
+  esbuild: true
