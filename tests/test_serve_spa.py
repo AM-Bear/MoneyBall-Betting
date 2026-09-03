@@ -5,6 +5,7 @@ import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
+import pytest
 from starlette.testclient import TestClient
 
 from backend.serve_spa import DIST_DIR, app
@@ -19,6 +20,17 @@ from backend.seo import (
 
 client = TestClient(app)
 
+# The tests marked below read the built frontend. `dist/` is gitignored, and it cannot be
+# built on every machine (the workspace's pnpm overrides ship esbuild for linux-x64 only),
+# so without it they skip with the reason -- the same convention the schema-backed tests
+# use without DATABASE_URL. With a dist present they still fail loudly when it is stale,
+# which is their job. Everything else in this file runs against the template and the
+# routing rules and needs no build.
+requires_dist = pytest.mark.skipif(
+    not (DIST_DIR / "index.html").is_file(),
+    reason="frontend build output missing (artifacts/moneyline/dist/public); run the vite build",
+)
+
 
 def _first_asset() -> str | None:
     assets = DIST_DIR / "assets"
@@ -30,6 +42,7 @@ def _first_asset() -> str | None:
     return None
 
 
+@requires_dist
 def test_root_serves_index() -> None:
     response = client.get("/")
     assert response.status_code == 200
@@ -37,12 +50,14 @@ def test_root_serves_index() -> None:
     assert response.headers["cache-control"] == "no-cache"
 
 
+@requires_dist
 def test_deep_link_falls_back_to_index() -> None:
     response = client.get("/players")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
 
 
+@requires_dist
 def test_research_route_includes_pre_javascript_content_and_metadata() -> None:
     response = client.get("/research/players")
     assert response.status_code == 200
@@ -99,6 +114,7 @@ def _json_ld_documents(markup: str) -> list[dict[str, object]]:
     ]
 
 
+@requires_dist
 def test_research_route_includes_its_collection_schema_before_javascript() -> None:
     response = client.get("/research")
     assert response.status_code == 200
@@ -129,6 +145,7 @@ def test_research_route_includes_its_collection_schema_before_javascript() -> No
     ]
 
 
+@requires_dist
 def test_track_record_route_includes_its_page_schema_before_javascript() -> None:
     response = client.get("/track-record")
     assert response.status_code == 200
@@ -172,6 +189,7 @@ def test_sitemap_lists_only_canonical_public_routes() -> None:
     assert "https://money-ball-betting.replit.app/players" not in locations
 
 
+@requires_dist
 def test_robots_advertises_the_sitemap() -> None:
     response = client.get("/robots.txt")
     assert response.status_code == 200
@@ -192,6 +210,7 @@ def test_api_root_is_a_json_404_not_an_spa_response() -> None:
     }
 
 
+@requires_dist
 def test_hashed_asset_is_immutable() -> None:
     asset = _first_asset()
     assert asset is not None, "frontend build output missing; run the vite build first"
@@ -218,6 +237,7 @@ def test_traversal_is_not_served() -> None:
     assert "FastAPI" not in response.text
 
 
+@requires_dist
 def test_route_metadata_is_actually_rewritten_not_left_at_the_homepage_default() -> None:
     """Regression: the SEO rewrites used to silently match nothing.
 

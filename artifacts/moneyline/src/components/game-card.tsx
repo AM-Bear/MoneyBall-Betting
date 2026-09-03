@@ -28,6 +28,8 @@ import {
   type EvaluateThresholds,
   type VerdictCode,
   type VerdictFlag,
+  useRecordBetLine,
+  useSession,
 } from "@/api";
 
 function titleCaseStatus(status?: string) {
@@ -172,7 +174,18 @@ function SideValueTile({ label, side }: { label: string; side: EvaluateSide }) {
     ["Model chance", formatProb(side.p_eval)],
     ["Fair price", formatOdds(side.fair_line)],
     ["Breakeven", side.breakeven == null ? "Not computed — no price" : formatProb(side.breakeven)],
-    ["Edge", side.edge_pts == null ? "Not computed — no price" : `${signed(side.edge_pts)} pts`],
+    // With both prices entered the book's margin is stripped and the edge is
+    // measured against what it actually thinks; with one price there is no
+    // market to de-vig and the edge stays against break-even. The label says
+    // which, so a reader never has to guess the basis of the number.
+    ...(side.market_prob != null ? [["Book thinks", formatProb(side.market_prob)] as [string, string]] : []),
+    [
+      side.edge_basis === "no_vig" ? "Edge vs no-vig market" : "Edge vs breakeven",
+      side.edge_pts == null ? "Not computed — no price" : `${signed(side.edge_pts)} pts`,
+    ],
+    ...(side.edge_basis === "no_vig" && side.edge_vs_implied_pts != null
+      ? [["Edge vs breakeven", `${signed(side.edge_vs_implied_pts)} pts`] as [string, string]]
+      : []),
     ["EV per 100", side.ev_per_100 == null ? "Not computed — no price" : signed(side.ev_per_100)],
     [
       "Signal",
@@ -218,6 +231,10 @@ export function GameCard({
   const [advancedOpen, setAdvancedOpen] = useState(detailLevel === "expanded");
   const [priceHome, setPriceHome] = useState("");
   const [priceAway, setPriceAway] = useState("");
+  // Which price fields the user has actually edited. An untouched blank field says nothing
+  // about a stored line; an edited one does -- emptied means "clear that side".
+  const [priceHomeDirty, setPriceHomeDirty] = useState(false);
+  const [priceAwayDirty, setPriceAwayDirty] = useState(false);
   const fieldId = useId().replace(/:/g, "");
   const isHistorical = Boolean(game.team && game.year);
   const isPartial = Boolean(game.pricing_error || game.model_prob_home == null || !game.fair_lines);
@@ -246,6 +263,26 @@ export function GameCard({
   const priceAwayValue = validMoneyline(priceAway);
   const priceHomeMalformed = isMalformedMoneyline(priceHome);
   const priceAwayMalformed = isMalformedMoneyline(priceAway);
+  // v4 1.1 (option C): the line you typed goes to your own record on blur, never to the
+  // model's. Only for a signed-in user on a live game the API can identify.
+  const session = useSession();
+  const recordLine = useRecordBetLine();
+  const canRecordLine =
+    Boolean(session.data?.authenticated) && Boolean(game.game_pk) && Boolean(game.game_date) && !isHistorical;
+  // Per side: a valid number records it; an emptied field sends null, which clears it
+  // (Asher, 2026-09-02); a malformed or untouched field is left out, which keeps it.
+  const sideToSend = (dirty: boolean, raw: string, value: number | null): number | null | undefined => {
+    if (!dirty) return undefined;
+    if (raw.trim() === "") return null;
+    return value ?? undefined;
+  };
+  const recordEnteredLines = () => {
+    if (!canRecordLine) return;
+    const line_home = sideToSend(priceHomeDirty, priceHome, priceHomeValue);
+    const line_away = sideToSend(priceAwayDirty, priceAway, priceAwayValue);
+    if (line_home === undefined && line_away === undefined) return;
+    recordLine.mutate({ gamePk: game.game_pk!, game_date: game.game_date!, line_home, line_away });
+  };
   const modelProbHome = game.model_prob_home;
   const adjProbHome = game.adj_prob ?? null;
   const gpHome = gamesPlayedByCode.get(game.home) ?? null;
@@ -455,9 +492,13 @@ export function GameCard({
                 <Input
                   id={`${fieldId}-away`}
                   value={priceAway}
-                  onChange={(event) => setPriceAway(event.target.value)}
+                  onChange={(event) => {
+                    setPriceAway(event.target.value);
+                    setPriceAwayDirty(true);
+                  }}
                   placeholder="+120"
                   className={cn("h-9 font-mono", priceAwayMalformed && "border-destructive text-destructive focus:border-destructive")}
+                  onBlur={recordEnteredLines}
                   data-testid={`input-price-away-${cardId}`}
                 />
               </div>
@@ -468,9 +509,13 @@ export function GameCard({
                 <Input
                   id={`${fieldId}-home`}
                   value={priceHome}
-                  onChange={(event) => setPriceHome(event.target.value)}
+                  onChange={(event) => {
+                    setPriceHome(event.target.value);
+                    setPriceHomeDirty(true);
+                  }}
                   placeholder="-110"
                   className={cn("h-9 font-mono", priceHomeMalformed && "border-destructive text-destructive focus:border-destructive")}
+                  onBlur={recordEnteredLines}
                   data-testid={`input-price-home-${cardId}`}
                 />
               </div>
@@ -479,6 +524,23 @@ export function GameCard({
               <p role="alert" className="mt-2 text-xs text-destructive">
                 An American price must be −100 or lower, or +100 or higher.
               </p>
+            )}
+            {result?.game.hold_pct != null && (
+              <p className="mt-2 text-xs text-muted-foreground" data-testid={`hold-${cardId}`}>
+                {result.game.hold_pct < 0
+                  ? `Book hold ${signed(result.game.hold_pct)}% · these two prices sum under 100%: an arbitrage, or a typo.`
+                  : `Book hold ${result.game.hold_pct.toFixed(1)}% · the overround of the two prices you entered. The 'Edge vs no-vig market' row is measured with it stripped.`}
+              </p>
+            )}
+            {canRecordLine && recordLine.isSuccess && (
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                {recordLine.data?.cleared
+                  ? "Cleared from your record. The model's record is untouched."
+                  : "Saved to your record. The model's record is untouched."}
+              </p>
+            )}
+            {canRecordLine && recordLine.isError && (
+              <p className="mt-1 text-[10px] text-destructive">Couldn't save your line; the verdict above still stands.</p>
             )}
           </>
         ) : (

@@ -26,6 +26,7 @@ from backend.odds import (
     log5_probability,
     market_vig,
     moneyline_to_probability,
+    no_vig_edge,
     parlay_book_decimal,
     parlay_ev,
     parlay_probability,
@@ -352,6 +353,35 @@ def v2_tests(artifacts: dict) -> None:
         )["sides"]["home"]["raw"]["edge"]
         == edge_probability(0.58, -115)
     ), "verdict edge must be odds.edge_probability exactly"
+
+    # 9. v4 Phase 1.3/1.4: the two-price case, worked by hand from the
+    # no-vig formulas first (derivation in verified_stats.json). With both
+    # prices the edge is measured against what the book thinks, the hold is
+    # the overround, and EV is still paid at the posted price.
+    case = checks["fixture_2_no_vig"]
+    result = evaluate_verdict(
+        p_season_home=case["probability_home"],
+        price_home=case["price_home"],
+        price_away=case["price_away"],
+        gp_home=126,
+        gp_away=126,
+    )
+    home_side, away_side = result["sides"]["home"], result["sides"]["away"]
+    assert result["game"]["hold_pct"] == case["hold_pct"], "no-vig hold %"
+    assert_close(home_side["raw"]["market_prob"], case["market_prob_home"], 1e-6, "no-vig home probability")
+    assert_close(away_side["raw"]["market_prob"], case["market_prob_away"], 1e-6, "no-vig away probability")
+    assert_close(home_side["raw"]["edge"], case["edge_home"], 1e-6, "home no-vig edge")
+    assert_close(home_side["raw"]["edge_implied"], case["edge_implied_home"], 1e-6, "home break-even edge")
+    assert_close(away_side["raw"]["edge"], case["edge_away"], 1e-6, "away no-vig edge")
+    assert_close(away_side["raw"]["edge_implied"], case["edge_implied_away"], 1e-6, "away break-even edge")
+    assert_close(away_side["raw"]["ev"], case["ev_away_per_unit"], 1e-6, "away EV per unit")
+    assert_close(away_side["raw"]["gap"], case["gap_away"], 1e-4, "away signal gap")
+    assert home_side["verdict"] == case["verdict_home"], "no-vig home verdict"
+    assert away_side["verdict"] == case["verdict_away"], "no-vig away verdict"
+    assert away_side["signal"] == case["signal_away"], "no-vig away signal"
+    assert away_side["raw"]["edge"] == no_vig_edge(
+        1 - case["probability_home"], case["price_away"], case["price_home"]
+    ), "two-price verdict edge must be odds.no_vig_edge exactly"
 
     print("v2 passed: mWAA receipts, runs/win, parlay math, blends, pulse, and the seeded sim.")
 

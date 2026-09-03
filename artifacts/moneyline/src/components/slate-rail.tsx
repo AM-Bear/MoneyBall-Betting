@@ -15,6 +15,7 @@ export function formatProb(prob: number | null | undefined): string {
 
 export interface SlateGame {
   game_pk?: string;
+  game_date?: string;
   team?: string;
   year?: number;
   away: string;

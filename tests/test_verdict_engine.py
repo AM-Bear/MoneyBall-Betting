@@ -59,25 +59,44 @@ def test_fixture_1_clear_candidate_on_a_confirmed_full_season_slate():
     assert result["game"]["verdict"] == "BET_CANDIDATE"
 
 
-def test_fixture_2_avoid_on_one_side_no_value_on_the_other():
-    # LAD (home) 0.55 at -150; SD (away) 0.45 at +125.
+def test_fixture_2_avoid_on_one_side_marginal_on_the_other_against_the_no_vig_market():
+    """Appendix A fixture 2, re-based on the no-vig market (v4 Phase 1.3).
+
+    LAD (home) 0.55 at -150; SD (away) 0.45 at +125. The spec table scored
+    this against the posted implied probabilities (LAD -5.0 pts, SD +0.6 pts,
+    SD NO_VALUE). Implied 0.6 + 0.4444 = 1.0444, so what the book actually
+    thinks is LAD 0.5745 / SD 0.4255, and SD's edge is 0.45 - 0.4255 = +2.4
+    pts -- the vigged number understated it by the vig share. EV is untouched
+    (still at the posted price, +1.25 per 100), below the 4.0 candidate bar,
+    so MARGINAL. The break-even numbers the spec printed survive as
+    `edge_vs_implied_pts`.
+    """
     result = evaluate(
         p_season_home=0.55, price_home=-150, price_away=125,
         gp_home=126, gp_away=126,
     )
     lad, sdp = home(result), away(result)
-    assert lad["edge_pts"] == -5.0
+    assert lad["edge_basis"] == "no_vig"
+    assert lad["market_prob"] == 0.5745
+    assert lad["edge_pts"] == -2.4
+    assert lad["edge_vs_implied_pts"] == -5.0
     assert lad["ev_per_100"] == -8.3
     assert lad["verdict"] == "AVOID_AT_THIS_PRICE"
-    assert sdp["edge_pts"] == 0.6
+    assert sdp["market_prob"] == 0.4255
+    assert sdp["edge_pts"] == 2.4
+    assert sdp["edge_vs_implied_pts"] == 0.6
     # The spec prints this one to 2 d.p.; the raw value is exactly +1.25.
     assert sdp["raw"]["ev"] * 100 == pytest.approx(1.25, abs=1e-9)
-    # +0.56 pts displays as +0.6, but 0.005556 < 0.01 raw. Compared raw, so the
-    # rounding cannot promote a near-miss into a pass.
-    assert sdp["verdict"] == "NO_VALUE"
-    assert result["game"]["verdict"] == "NO_VALUE"
-    assert result["game"]["side"] is None
+    assert sdp["verdict"] == "MARGINAL_VALUE"
+    assert sdp["verdict_reason"] == "positive_edge_below_candidate_thresholds"
+    assert sdp["gap"] == 0.61
+    assert sdp["signal"] == "Moderate"
+    assert result["game"]["verdict"] == "MARGINAL_VALUE"
+    assert result["game"]["side"] == "away"
+    assert result["game"]["lean_side"] == "home"
+    assert result["game"]["lean_differs_from_value"] is True
     assert "Home" in result["game"]["avoid_note"]
+    assert result["game"]["hold_pct"] == 4.4
 
 
 def test_fixture_3_no_price_still_publishes_the_fair_line():
@@ -428,3 +447,133 @@ def test_desk_engine_touches_no_context_signals():
 def test_desk_an_unknown_status_is_rejected_rather_than_assumed():
     with pytest.raises(ValueError):
         evaluate(p_season_home=0.58, price_home=-115, status="rain-delay", **FULL_SEASON)
+
+
+# --------------------------------------------------------------------------
+# v4 Phase 1.3 / 1.4 -- edge against the no-vig market, hold per game.
+# DESK-AUTHORED. Every expected number was worked by hand from the two-price
+# formulas (implied = |L|/(|L|+100) or 100/(L+100); no-vig = implied / sum;
+# hold = sum - 1; EV = p*(dec-1) - (1-p)) before being written down.
+# --------------------------------------------------------------------------
+
+def test_single_price_keeps_the_break_even_basis():
+    """With one price there is no market to de-vig. The edge stays against
+    the posted implied probability, and the payload says which basis it used
+    rather than leaving the reader to guess."""
+    result = evaluate(
+        p_season_home=0.58, p_adj_home=0.58, price_home=-115, **FULL_SEASON
+    )
+    side = home(result)
+    assert side["edge_basis"] == "implied"
+    assert side["market_prob"] is None
+    assert side["edge_pts"] == 4.5
+    assert side["edge_vs_implied_pts"] == 4.5
+    assert result["game"]["hold_pct"] is None
+
+
+def test_two_prices_measure_edge_against_the_no_vig_market():
+    """-110/-110 is a coin flip once the margin is stripped: the book thinks
+    0.500 a side, so a 0.58 model has 8.0 pts of edge, not the 5.6 the posted
+    -110 implies. EV is unchanged -- it is still paid at the posted price."""
+    result = evaluate(
+        p_season_home=0.58, p_adj_home=0.58,
+        price_home=-110, price_away=-110, **FULL_SEASON
+    )
+    side = home(result)
+    assert side["edge_basis"] == "no_vig"
+    assert side["market_prob"] == 0.5
+    assert side["edge_pts"] == 8.0
+    assert side["edge_vs_implied_pts"] == 5.6
+    assert side["ev_per_100"] == 10.7
+    assert side["gap"] == 2.0
+    assert side["verdict"] == "BET_CANDIDATE"
+    assert side["signal"] == "Strong"
+    assert away(result)["market_prob"] == 0.5
+    assert away(result)["edge_pts"] == -8.0
+
+
+def test_the_two_price_edge_is_odds_no_vig_edge_exactly():
+    """Composed, not re-derived: to the last bit, not the display value."""
+    from backend.odds import no_vig_edge
+
+    side = home(evaluate(
+        p_season_home=0.58, price_home=-110, price_away=-110, **FULL_SEASON
+    ))
+    assert side["raw"]["edge"] == no_vig_edge(0.58, -110, -110)
+    assert side["raw"]["market_prob"] == 0.5
+
+
+def test_hold_pct_is_the_overround_of_the_two_entered_prices():
+    """'Your book charges 4.8% here': implied 0.5238 + 0.5238 - 1."""
+    from backend.odds import market_vig
+
+    result = evaluate(
+        p_season_home=0.58, price_home=-110, price_away=-110, **FULL_SEASON
+    )
+    assert result["game"]["hold_pct"] == 4.8
+    assert result["game"]["hold_pct"] == round(market_vig(-110, -110) * 100, 1)
+    result = evaluate(
+        p_season_home=0.55, price_home=-150, price_away=125, **FULL_SEASON
+    )
+    assert result["game"]["hold_pct"] == 4.4
+
+
+def test_an_arbitrage_market_reports_a_negative_hold_rather_than_refusing():
+    """-200/+250 sums below 1. odds.py treats that as a real market state,
+    and so does the verdict: the hold is negative and both sides still score.
+    No-vig 0.700 / 0.300, so the away edge is exactly 15.0 pts."""
+    result = evaluate(
+        p_season_home=0.55, p_adj_home=0.55,
+        price_home=-200, price_away=250, **FULL_SEASON
+    )
+    assert result["game"]["hold_pct"] == -4.8
+    assert home(result)["market_prob"] == 0.7
+    assert away(result)["market_prob"] == 0.3
+    assert away(result)["edge_pts"] == 15.0
+    assert away(result)["edge_vs_implied_pts"] == 16.4
+    assert away(result)["verdict"] == "BET_CANDIDATE"
+
+
+def test_a_frozen_game_still_reports_the_hold():
+    """Hold is a fact about the two prices, like `price` itself, not an
+    artifact of an evaluation -- so unlike flags it survives the freeze."""
+    result = evaluate(
+        p_season_home=0.58, price_home=-110, price_away=-110,
+        status="live", **FULL_SEASON
+    )
+    assert result["game"]["hold_pct"] == 4.8
+    assert home(result)["verdict"] is None
+
+
+def test_the_basis_note_judges_the_season_price_on_the_same_market_basis():
+    """p_season 0.54 against a -115/-105 market. Versus the posted -115 the
+    season edge is +0.5 pts, under the 1-pt minimum, so the old basis would
+    stay silent. Versus the no-vig 0.5108 it is +2.9 pts. The note must use
+    the basis the verdict used, not a mix."""
+    result = evaluate(
+        p_season_home=0.54, p_adj_home=0.50,
+        price_home=-115, price_away=-105, **FULL_SEASON
+    )
+    side = home(result)
+    assert side["verdict"] == "AVOID_AT_THIS_PRICE"
+    assert side["basis_note"] is not None
+    assert "season-only" in side["basis_note"]
+
+
+def test_a_gated_game_with_an_unpriceable_line_is_a_refusal_not_an_error():
+    """v4 1.4 regression guard. Hold is computed from the two prices after the sides return
+    but before the gates do, so a sample-gated game carrying a price odds.py cannot read
+    (zero) must still come back INSUFFICIENT_DATA with no hold -- a refusal is a result,
+    not an exception. The route rejects such a price at validation; a direct caller of the
+    engine does not go through the route."""
+    result = evaluate(p_season_home=0.58, price_home=0, price_away=-110, gp_home=10, gp_away=10)
+    assert result["game"]["verdict"] == "INSUFFICIENT_DATA"
+    assert result["game"]["verdict_reason"] == "early_season"
+    assert result["game"]["hold_pct"] is None
+    assert home(result)["verdict"] == "INSUFFICIENT_DATA"
+
+
+def test_a_game_with_unknown_games_played_and_an_unpriceable_line_still_refuses():
+    result = evaluate(p_season_home=0.58, price_home=-110, price_away=0)
+    assert result["game"]["verdict_reason"] == "gp_unavailable"
+    assert result["game"]["hold_pct"] is None

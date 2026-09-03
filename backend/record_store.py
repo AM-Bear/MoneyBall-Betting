@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 import psycopg
@@ -174,6 +174,31 @@ def ensure_schema() -> bool:
           last_event_created timestamptz,
           updated_at timestamptz NOT NULL DEFAULT now()
         )
+        """,
+        # v4 1.1 (option C): a user's own lines, keyed to the user, apart from the
+        # model's record. IF NOT EXISTS like everything else here; no row is rewritten.
+        """
+        CREATE TABLE IF NOT EXISTS moneyline_bets (
+          id serial PRIMARY KEY,
+          user_id text NOT NULL,
+          game_pk text NOT NULL,
+          game_date date NOT NULL,
+          line_home integer,
+          line_away integer,
+          book text,
+          entered_at timestamptz NOT NULL DEFAULT now(),
+          model_version text,
+          created_at timestamptz NOT NULL DEFAULT now(),
+          updated_at timestamptz NOT NULL DEFAULT now()
+        )
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS moneyline_bets_user_game_idx
+          ON moneyline_bets (user_id, game_pk)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS moneyline_bets_user_date_idx
+          ON moneyline_bets (user_id, game_date)
         """,
         """
         CREATE TABLE IF NOT EXISTS moneyline_billing_events (
@@ -841,3 +866,118 @@ def void_parlay(slip_id: int) -> bool:
             voided = cursor.rowcount > 0
         connection.commit()
     return voided
+
+
+# --- v4 1.1 (option C): a user's own lines, apart from the model's record ---------------
+
+_BET_COLUMNS = (
+    "id, user_id, game_pk, game_date, line_home, line_away, book, entered_at, "
+    "model_version, created_at, updated_at"
+)
+
+
+def _bet_payload(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": int(row["id"]),
+        "user_id": row["user_id"],
+        "game_pk": row["game_pk"],
+        "game_date": row["game_date"].isoformat(),
+        "line_home": row["line_home"],
+        "line_away": row["line_away"],
+        "book": row["book"],
+        "entered_at": row["entered_at"].isoformat(),
+        "model_version": row["model_version"],
+        "created_at": row["created_at"].isoformat(),
+        "updated_at": row["updated_at"].isoformat(),
+    }
+
+
+class _Keep:
+    """Sentinel: the caller did not mention this field, so the stored value stays."""
+
+    def __repr__(self) -> str:
+        return "KEEP"
+
+
+KEEP: Any = _Keep()
+
+
+def record_bet_line(
+    user_id: str,
+    game_pk: str,
+    game_date: date,
+    line_home: int | None | _Keep = KEEP,
+    line_away: int | None | _Keep = KEEP,
+    book: str | None | _Keep = KEEP,
+) -> dict[str, Any] | None:
+    """Record, update or clear the line a user says they can get on a game.
+
+    Lives in `moneyline_bets`, keyed to the user, never in `moneyline_record_picks`: the
+    model's public record is graded at its own price and must not be contaminated by what
+    any user typed (v4 §4.2). Absent and null are different things (Asher, 2026-09-02):
+    a field left at `KEEP` leaves the stored value alone, so a card with one price typed
+    cannot wipe the other; an explicit None clears it. `entered_at` and `model_version`
+    move with every write -- the era marker follows the line, not the row -- and
+    `created_at` keeps the first entry.
+
+    A row left with both sides cleared is deleted and None is returned: a cleared line is
+    not a bet, and 1.5 must never grade the absence of one. The user's record holds only
+    lines they actually hold.
+    """
+    fields = {"line_home": line_home, "line_away": line_away, "book": book}
+    given = {name: value for name, value in fields.items() if value is not KEEP}
+    assignments = ", ".join(f"{name} = EXCLUDED.{name}" for name in given)
+    if assignments:
+        assignments += ","
+    with _connection() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"""
+                INSERT INTO moneyline_bets (
+                  user_id, game_pk, game_date, line_home, line_away, book, model_version
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, game_pk) DO UPDATE SET
+                  {assignments}
+                  game_date = EXCLUDED.game_date,
+                  model_version = EXCLUDED.model_version,
+                  entered_at = now(),
+                  updated_at = now()
+                RETURNING {_BET_COLUMNS}
+                """,
+                (
+                    user_id,
+                    game_pk,
+                    game_date,
+                    given.get("line_home"),
+                    given.get("line_away"),
+                    given.get("book"),
+                    MODEL_VERSION,
+                ),
+            )
+            row = cursor.fetchone()
+            if row["line_home"] is None and row["line_away"] is None:
+                cursor.execute("DELETE FROM moneyline_bets WHERE id = %s", (row["id"],))
+                row = None
+        connection.commit()
+    return _bet_payload(row) if row is not None else None
+
+
+def user_bets(user_id: str, game_date: date | None = None) -> list[dict[str, Any]]:
+    """A user's recorded lines, newest first; one day's when `game_date` is given."""
+    with _connection() as connection:
+        with connection.cursor() as cursor:
+            if game_date is None:
+                cursor.execute(
+                    f"SELECT {_BET_COLUMNS} FROM moneyline_bets WHERE user_id = %s "
+                    "ORDER BY game_date DESC, id DESC",
+                    (user_id,),
+                )
+            else:
+                cursor.execute(
+                    f"SELECT {_BET_COLUMNS} FROM moneyline_bets "
+                    "WHERE user_id = %s AND game_date = %s ORDER BY id DESC",
+                    (user_id, game_date),
+                )
+            rows = cursor.fetchall()
+    return [_bet_payload(row) for row in rows]

@@ -29,8 +29,18 @@ export function EdgeFinder({
   const lineAId = `${fieldId}-line-a`;
   const lineBId = `${fieldId}-line-b`;
   const opponentId = `${fieldId}-opponent`;
+  const stakeCapId = `${fieldId}-stake-cap`;
   const [lineA, setLineA] = useState<string>("");
   const [lineB, setLineB] = useState<string>("");
+  // v4 4.1: the ½ Kelly shown is capped in the API's display layer. The cap is visible
+  // on the result and adjustable here, as a percent of bankroll; the API refuses anything
+  // above its policy ceiling, so an out-of-range entry falls back to the default cap.
+  const [stakeCap, setStakeCap] = useState<string>("2");
+  const parsedStakeCap = parseFloat(stakeCap);
+  const stakeCapFraction =
+    Number.isFinite(parsedStakeCap) && parsedStakeCap > 0 && parsedStakeCap <= 5
+      ? parsedStakeCap / 100
+      : undefined;
   const [teamBId, setTeamBId] = useState<{team: string, year: number}>({ team: "NYY", year: 2002 });
   
   const { data: teamsData } = useTeams();
@@ -82,10 +92,11 @@ export function EdgeFinder({
       book_line_b: isValidB ? parsedB : null,
       // The API scores the selected side, not merely the first field.
       evaluation_side: isValidA ? "a" : "b",
+      ...(stakeCapFraction !== undefined ? { stake_cap: stakeCapFraction } : {}),
     };
     
     matchup.mutate(payload);
-  }, [teamAStats, teamBData.data, lineA, lineB, activeSlateGame, overrideB?.inputs, deferUntilBookLine]);
+  }, [teamAStats, teamBData.data, lineA, lineB, stakeCapFraction, activeSlateGame, overrideB?.inputs, deferUntilBookLine]);
 
   const result = matchup.data;
   const isLoading = matchup.isPending || (teamBData.isLoading && !activeSlateGame && !overrideB);
@@ -172,6 +183,16 @@ export function EdgeFinder({
                 className={cn("h-8 font-mono", isLineBInvalid && "border-destructive text-destructive focus:border-destructive")}
               />
             </div>
+            <div className="mt-2">
+              <label htmlFor={stakeCapId} className="text-[10px] uppercase text-muted-foreground">Stake cap · % of bankroll (max 5)</label>
+              <Input
+                id={stakeCapId}
+                value={stakeCap}
+                onChange={(e) => setStakeCap(e.target.value)}
+                placeholder="2"
+                className={cn("h-8 font-mono", stakeCap !== "" && stakeCapFraction === undefined && "border-destructive text-destructive focus:border-destructive")}
+              />
+            </div>
           </div>
         </div>
         {(isLineAInvalid || isLineBInvalid) && (
@@ -210,8 +231,13 @@ export function EdgeFinder({
                     <span className="font-mono">{formatProb(result.break_even_rate)}</span>
                   </div>
                   <div className="flex flex-col gap-1">
-                    <span className="text-[10px] text-muted-foreground uppercase">½ Kelly</span>
+                    <span className="text-[10px] text-muted-foreground uppercase">½ Kelly{result.kelly_capped ? " · capped" : ""}</span>
                     <span className="font-mono">{formatProb(result.kelly_fraction)}</span>
+                    {result.kelly_capped && (
+                      <span className="text-[10px] text-muted-foreground font-mono">
+                        raw {formatProb(result.kelly_fraction_raw)} · cap {formatProb(result.kelly_cap)}
+                      </span>
+                    )}
                   </div>
                 </div>
               )}

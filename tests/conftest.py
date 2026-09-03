@@ -98,6 +98,25 @@ CREATE UNIQUE INDEX moneyline_parlay_user_date_idx
 CREATE INDEX moneyline_parlay_pending_batch_idx
   ON moneyline_parlay_slips (slip_date, id)
   WHERE result IS NULL;
+
+-- v4 1.1 (option C): a user's own lines, apart from the model's record
+CREATE TABLE moneyline_bets (
+  id SERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  game_pk TEXT NOT NULL,
+  game_date DATE NOT NULL,
+  line_home INTEGER,
+  line_away INTEGER,
+  book TEXT,
+  entered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  model_version TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX moneyline_bets_user_game_idx
+  ON moneyline_bets (user_id, game_pk);
+CREATE INDEX moneyline_bets_user_date_idx
+  ON moneyline_bets (user_id, game_date);
 """
 
 

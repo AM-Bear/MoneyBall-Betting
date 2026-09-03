@@ -60,6 +60,7 @@ from backend.odds import (
 )
 from backend.players import build_player_card, compare_players, search_players
 from backend.precompute import MODEL_VERSION
+from backend.record_store import KEEP, record_bet_line  # v4 1.1 (option C)
 from backend.record_store import (
     MAX_PARLAY_BOOK_LINE,
     database_available,
@@ -75,6 +76,7 @@ from backend.record_store import (
     void_pick,
 )
 from backend.season_sim import get_season_sim, get_team_outlook
+from backend.stakes import STAKE_CAP_DEFAULT, STAKE_CAP_MAX, capped_stake
 from backend.seo import (
     SITEMAP_PATH,
     is_public_client_route,
@@ -139,6 +141,9 @@ class ParlayInput(BaseModel):
         le=MAX_PARLAY_BOOK_LINE,
     )
 
+    # v4 4.1: the displayed stake is capped; the cap is adjustable within policy.
+    stake_cap: float | None = Field(default=None, gt=0, le=STAKE_CAP_MAX)
+
     @model_validator(mode="after")
     def validate_book_odds(self) -> "ParlayInput":
         if self.book_odds is not None and abs(self.book_odds) < 100:
@@ -160,6 +165,8 @@ class MatchupInput(BaseModel):
     book_line_a: int | None = None
     book_line_b: int | None = None
     evaluation_side: Literal["a", "b"] = "a"
+    # v4 4.1: the displayed stake is capped; the cap is adjustable within policy.
+    stake_cap: float | None = Field(default=None, gt=0, le=STAKE_CAP_MAX)
 
     @model_validator(mode="after")
     def validate_lines(self) -> "MatchupInput":
@@ -167,6 +174,31 @@ class MatchupInput(BaseModel):
             if line == 0 or (line is not None and abs(line) < 100):
                 raise ValueError("American moneylines must be ≤ −100 or ≥ +100.")
         return self
+
+
+class BetLineInput(BaseModel):
+    """v4 1.1 (option C): the line a user says they can get on one game.
+
+    Absent and null differ (Asher, 2026-09-02): a side left out keeps its stored value, an
+    explicit `null` clears it. `model_fields_set` is how the route tells the two apart.
+    """
+
+    game_date: date
+    line_home: int | None = None
+    line_away: int | None = None
+    book: str | None = Field(default=None, max_length=64)
+
+    @model_validator(mode="after")
+    def validate_lines(self) -> "BetLineInput":
+        if not ({"line_home", "line_away"} & self.model_fields_set):
+            raise ValueError("Send at least one side: a line, or null to clear it.")
+        for line in (self.line_home, self.line_away):
+            if line == 0 or (line is not None and abs(line) < 100):
+                raise ValueError("American moneylines must be ≤ −100 or ≥ +100.")
+        return self
+
+    def field_or_keep(self, name: str) -> Any:
+        return getattr(self, name) if name in self.model_fields_set else KEEP
 
 
 class EvaluateInput(BaseModel):
@@ -925,6 +957,9 @@ async def matchup(
         if evaluated_line is not None
         else 0
     )
+    # v4 4.1: odds.py's half-Kelly is uncapped; the number shown is capped here, in the
+    # display layer, with the raw value and the cap shipped as receipts.
+    stake = capped_stake(half_kelly, payload.stake_cap)
     return {
         "model_prob_a": round(model_prob_a, 4),
         "model_prob_b": round(model_prob_b, 4),
@@ -936,7 +971,10 @@ async def matchup(
             implied_b if evaluates_b else implied_a, 4
         ) if evaluated_line is not None else None,
         "verdict": verdict,
-        "kelly_fraction": round(half_kelly, 4),
+        "kelly_fraction": round(stake["fraction"], 4),
+        "kelly_fraction_raw": round(stake["raw_fraction"], 4),
+        "kelly_cap": stake["cap"],
+        "kelly_capped": stake["capped"],
         "evaluation_side": payload.evaluation_side,
         "fair_line_a": fair_line_a,
         "fair_line_b": fair_line_b,
@@ -945,6 +983,11 @@ async def matchup(
             "pythagorean_b": round(strength_b, 4),
             "method": "Pythagorean expectation combined with log5",
             "kelly": "½ × ((p × decimal odds − 1) / (decimal odds − 1))",
+            "kelly_cap": (
+                "kelly_fraction = min(½ Kelly, kelly_cap); the cap is declared policy "
+                f"(v4 4.1), default {STAKE_CAP_DEFAULT}, adjustable per request up to "
+                f"{STAKE_CAP_MAX}"
+            ),
         },
         "team_a_prediction": team_a["predicted"],
         "team_b_prediction": team_b["predicted"],
@@ -1265,7 +1308,7 @@ async def players(
         "floor_note": "The all pool is floored at ≥100 PA or ≥30 IP.",
     }
 def _price_parlay_payload(
-    legs: list[dict[str, Any]], book_odds: int | None
+    legs: list[dict[str, Any]], book_odds: int | None, stake_cap: float | None = None
 ) -> dict[str, Any]:
     probabilities = [leg["probability"] for leg in legs]
     combined = parlay_probability(probabilities)
@@ -1283,13 +1326,18 @@ def _price_parlay_payload(
         payout = decimal_odds(book_odds)
         ev = parlay_ev(combined, payout)
         kelly = half_kelly_fraction(combined, book_odds) if ev > 0 else 0.0
+        # v4 4.1: capped in the display layer; raw value and cap ship as receipts.
+        stake = capped_stake(kelly, stake_cap)
         result["book"] = {
             "book_odds": book_odds,
             "implied_prob": round(implied, 4),
             "edge_pp": round((combined - implied) * 100, 1),
             "ev_per_unit": round(ev, 4),
-            "half_kelly": round(kelly, 4),
-            "stake_label": f"{kelly:.4f}" if ev > 0 else "0.00 — NO EDGE",
+            "half_kelly": round(stake["fraction"], 4),
+            "half_kelly_raw": round(stake["raw_fraction"], 4),
+            "kelly_cap": stake["cap"],
+            "kelly_capped": stake["capped"],
+            "stake_label": f"{stake['fraction']:.4f}" if ev > 0 else "0.00 — NO EDGE",
         }
     else:
         result["book"] = None
@@ -1370,6 +1418,47 @@ async def parlay_log(
         ),
     }
 
+@app.put("/api/bets/{game_pk}")
+async def record_bet_line_route(
+    game_pk: str,
+    payload: BetLineInput,
+    user: dict[str, Any] = Depends(get_current_user),
+) -> dict[str, Any]:
+    """v4 1.1 as option C: the line you say you can get, in your own record.
+
+    Writes `moneyline_bets` and nothing else. `moneyline_record_picks` -- the model's
+    public record, graded at its own price -- is not touched by this route, and a test
+    proves its rows are byte-identical before and after. 1.5 (closing line + CLV) reads
+    from here.
+    """
+    if not game_pk.isdigit() or len(game_pk) > 12:
+        raise MoneylineError("invalid_game", "gamePk must be the MLB numeric game id.", 400)
+    if not await asyncio.to_thread(database_available):
+        raise MoneylineError(
+            "record_unavailable",
+            "The persistent record store is not available.",
+            503,
+        )
+    bet = await asyncio.to_thread(
+        record_bet_line,
+        str(user["id"]),
+        game_pk,
+        payload.game_date,
+        payload.field_or_keep("line_home"),
+        payload.field_or_keep("line_away"),
+        payload.field_or_keep("book"),
+    )
+    return {
+        "bet": bet,
+        # Both sides cleared: the row is gone, because a cleared line is not a bet.
+        "cleared": bet is None,
+        "note": (
+            "Your line, in your own record. The model's public record is graded at its "
+            "own price and is not touched by this."
+        ),
+    }
+
+
 @app.get("/api/team-live/{team_id}")
 async def team_live(team_id: int) -> dict[str, Any]:
     try:
@@ -1403,7 +1492,7 @@ async def parlay_price(
     _user: dict[str, Any] = Depends(require_feature("parlay")),
 ) -> dict[str, Any]:
     legs = await _resolve_parlay_legs(payload)
-    return _price_parlay_payload(legs, payload.book_odds)
+    return _price_parlay_payload(legs, payload.book_odds, payload.stake_cap)
 
 @app.get("/api/player/{player_id}")
 async def player_card(

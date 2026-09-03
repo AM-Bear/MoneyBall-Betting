@@ -159,3 +159,16 @@ def test_matchup_is_untouched_by_the_new_endpoint():
         "BET_CANDIDATE", "MARGINAL_VALUE", "AVOID_AT_THIS_PRICE",
         "INSUFFICIENT_DATA",
     }
+
+
+def test_two_prices_expose_the_hold_and_the_no_vig_basis():
+    """v4 1.3/1.4: the route carries the market fields the engine adds."""
+    body = client.post(
+        "/api/evaluate", json={**FULL, "price_home": -110, "price_away": -110}
+    ).json()
+    assert body["game"]["hold_pct"] == 4.8
+    home = body["sides"]["home"]
+    assert home["edge_basis"] == "no_vig"
+    assert home["market_prob"] == 0.5
+    assert home["edge_pts"] == 8.0
+    assert home["edge_vs_implied_pts"] == 5.6

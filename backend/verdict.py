@@ -29,7 +29,10 @@ from typing import Any
 from backend.odds import (
     decimal_odds,
     edge_probability,
+    market_vig,
     moneyline_to_probability,
+    no_vig_edge,
+    no_vig_probabilities,
     parlay_ev,
     probability_to_moneyline,
 )
@@ -63,6 +66,17 @@ THRESHOLDS: dict[str, Any] = {
         "sigma": "Placeholder pending live calibration; gap = edge / sigma is not a calibrated statistic.",
         "signal": "Signal labels are provisional until the bucket holds 200 graded candidates.",
         "thresholds": "Declared policy, not fitted coefficients. Not sourced from load_models().",
+        "edge": (
+            "With both prices entered, edge is measured against the no-vig market "
+            "probability (what the book thinks); with one price, against the posted "
+            "implied probability (break-even). EV is always at the posted price."
+        ),
+        "hold": (
+            "Hold is the overround of the two entered prices: implied home plus "
+            "implied away, minus 1. It is the book's margin on this market, not a "
+            "model number. Below zero means the two prices sum under 100%: an "
+            "arbitrage, or a typo."
+        ),
     },
 }
 
@@ -160,11 +174,26 @@ def _signal(gap: float, agree: bool | None, missing_ingredients: int) -> str:
     return "Weak"
 
 
+def _edge(probability: float, price: int, opposite_price: int | None) -> float:
+    """Model probability minus the market, on whichever basis the market allows.
+
+    Two prices: the no-vig probability, what the book actually thinks
+    (`no_vig_edge`). One price: the posted implied probability, break-even
+    (`edge_probability`). Both compose odds.py; neither re-derives it. The
+    verdict and the season-only basis note both call this, so they cannot
+    disagree about which market they were judged against.
+    """
+    if opposite_price is not None:
+        return no_vig_edge(probability, price, opposite_price)
+    return edge_probability(probability, price)
+
+
 def _evaluate_side(
     *,
     p_season: float,
     p_adj: float | None,
     price: int | None,
+    opposite_price: int | None,
     min_gp: int | None,
     starters_confirmed: bool,
     price_age_s: float | None,
@@ -198,7 +227,10 @@ def _evaluate_side(
         "fair_line": probability_to_moneyline(p_eval),
         "implied": None,
         "breakeven": None,
+        "market_prob": None,
+        "edge_basis": None,
         "edge_pts": None,
+        "edge_vs_implied_pts": None,
         "ev_per_100": None,
         "verdict": None,
         "verdict_reason": None,
@@ -246,10 +278,22 @@ def _evaluate_side(
     if stale:
         flags.append("stale")
 
-    # Edge and breakeven come from the same implied probability, so the two
-    # provably agree rather than agreeing by coincidence.
+    # Break-even and the posted implied probability are the same number, so
+    # the two provably agree rather than agreeing by coincidence. The
+    # thresholded edge is measured against the market on whichever basis the
+    # entered prices allow (v4 1.3): with the opposite price known, the no-vig
+    # probability -- the posted price understates every edge by the vig
+    # share, more so on the favourite; with one price, break-even. EV is
+    # always at the posted price: that is the number the bet is paid at.
     implied = moneyline_to_probability(price)
-    edge = edge_probability(p_eval, price)
+    edge_implied = edge_probability(p_eval, price)
+    if opposite_price is not None:
+        market_prob: float | None = no_vig_probabilities(price, opposite_price)[0]
+        edge_basis = "no_vig"
+    else:
+        market_prob = None
+        edge_basis = "implied"
+    edge = _edge(p_eval, price, opposite_price)
     ev = _ev_at(p_eval, price)
     gap = edge / THRESHOLDS["sigma"]
 
@@ -300,7 +344,7 @@ def _evaluate_side(
         and ev_season is not None
         and verdict in (NO_VALUE, AVOID_AT_THIS_PRICE)
     ):
-        season_edge = edge_probability(p_season, price)
+        season_edge = _edge(p_season, price, opposite_price)
         if ev_season > 0 and season_edge >= THRESHOLDS["no_value_edge"]:
             side["basis_note"] = (
                 "Evaluated on the starter-adjusted chance. The season-only "
@@ -311,7 +355,10 @@ def _evaluate_side(
         {
             "implied": round(implied, 4),
             "breakeven": round(implied, 4),
+            "market_prob": round(market_prob, 4) if market_prob is not None else None,
+            "edge_basis": edge_basis,
             "edge_pts": round(edge * 100, 1),
+            "edge_vs_implied_pts": round(edge_implied * 100, 1),
             "ev_per_100": round(ev * 100, 1),
             "verdict": verdict,
             "verdict_reason": reason,
@@ -324,7 +371,14 @@ def _evaluate_side(
     # rather than display. Rounding first creates a boundary lie: a raw edge of
     # 0.0096 displays as +1.0 points, which reads as clearing `edge >= 0.01`
     # while the raw comparison correctly fails it.
-    side["raw"] = {"edge": edge, "ev": ev, "implied": implied, "gap": gap}
+    side["raw"] = {
+        "edge": edge,
+        "edge_implied": edge_implied,
+        "market_prob": market_prob,
+        "ev": ev,
+        "implied": implied,
+        "gap": gap,
+    }
     return side
 
 
@@ -375,11 +429,28 @@ def evaluate(
         "sample_gate": sample_gate,
     }
     home = _evaluate_side(
-        p_season=p_season_home, p_adj=p_adj_home, price=price_home, **common
+        p_season=p_season_home, p_adj=p_adj_home,
+        price=price_home, opposite_price=price_away, **common
     )
     away = _evaluate_side(
-        p_season=p_season_away, p_adj=p_adj_away, price=price_away, **common
+        p_season=p_season_away, p_adj=p_adj_away,
+        price=price_away, opposite_price=price_home, **common
     )
+
+    # v4 1.4: what the book charges on this market. A fact about the two
+    # entered prices, like `price` itself, not an artifact of the evaluation,
+    # so it is set before any gate and survives a frozen game. Negative is a
+    # real state (the prices sum under 1), not an error -- odds.py agrees.
+    hold: float | None = None
+    if price_home is not None and price_away is not None:
+        try:
+            hold = market_vig(price_home, price_away)
+        except ValueError:
+            # A price odds.py cannot read (zero, non-finite). On the ungated path the
+            # side evaluation above has already raised for it; on a gated path the
+            # sides returned before touching the price, and hold must not turn that
+            # refusal into an exception. No number is the honest answer here.
+            hold = None
 
     # The lean is price-independent -- it is what the model thinks, full stop.
     # Keeping it separate from the value side is the entire point of this
@@ -405,6 +476,7 @@ def evaluate(
         "frozen": frozen,
         "status": status,
         "book": book,
+        "hold_pct": round(hold * 100, 1) if hold is not None else None,
         "takeaway": None,
     }
 

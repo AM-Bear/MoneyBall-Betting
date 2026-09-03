@@ -288,6 +288,20 @@ export function useParlayLog() {
   });
 }
 
+/** v4 1.1 (option C): record the line you say you can get, in your own record.
+ *  Writes `moneyline_bets` only; the model's public record is never touched. */
+export function useRecordBetLine() {
+  return useMutation({
+    // A side that is a number records it, `null` clears it, and an omitted side keeps what is
+    // stored (JSON.stringify drops undefined keys, which is exactly the API's "absent").
+    mutationFn: (payload: { gamePk: string; game_date: string; line_home?: number | null; line_away?: number | null }) =>
+      fetchApi<{ bet: Record<string, unknown> | null; cleared: boolean; note: string }>(`/bets/${payload.gamePk}`, {
+        method: 'PUT',
+        body: JSON.stringify({ game_date: payload.game_date, line_home: payload.line_home, line_away: payload.line_away }),
+      }),
+  });
+}
+
 export function useSeasonSim(enabled = true) {
   return useQuery({
     queryKey: ['season-sim'],
@@ -367,7 +381,15 @@ export interface EvaluateSide {
   fair_line: number | null;
   implied: number | null;
   breakeven: number | null;
+  /** What the book actually thinks once the margin is stripped from the two
+   *  entered prices. null with one price: there is no market to de-vig. */
+  market_prob: number | null;
+  /** Which market the thresholded edge was measured against (v4 1.3). */
+  edge_basis: 'no_vig' | 'implied' | null;
   edge_pts: number | null;
+  /** Edge against the posted implied probability (break-even), whenever a
+   *  price exists. Equals edge_pts when edge_basis is 'implied'. */
+  edge_vs_implied_pts: number | null;
   ev_per_100: number | null;
   verdict: VerdictCode | null;
   verdict_reason: string | null;
@@ -382,7 +404,14 @@ export interface EvaluateSide {
   agree: boolean | null;
   flags: VerdictFlag[];
   basis_note: string | null;
-  raw?: { edge: number; ev: number; implied: number; gap: number };
+  raw?: {
+    edge: number;
+    edge_implied: number;
+    market_prob: number | null;
+    ev: number;
+    implied: number;
+    gap: number;
+  };
 }
 
 export interface EvaluateThresholds {
@@ -418,6 +447,9 @@ export interface EvaluateResponse {
     frozen: boolean;
     status: EvaluateStatus;
     book: string | null;
+    /** The book's overround on the two entered prices, as a percentage
+     *  (v4 1.4). null with one price. Negative is an arbitrage or a typo. */
+    hold_pct: number | null;
     takeaway: string | null;
   };
   sample: { gp_home: number | null; gp_away: number | null; label: string };
