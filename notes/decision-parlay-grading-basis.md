@@ -186,7 +186,7 @@ basis note. No row is rewritten; nothing in the DB changes. Published line stays
 carries a footnote that 2 of 3 slips were graded on a retired basis.
 
 **(b) Regrade history to compounded −110.**
-Change: a one-off script `UPDATE`ing slips 3 and 5. This **violates `replit.md`** — "DB tables
+Change: a one-off script `UPDATE`ing slips 3 and 5. This **violates `notes/build-history/replit.md`** — "DB tables
 predate the repo… migrations must be `IF NOT EXISTS` style and never rewrite existing rows" —
 and it would require deliberately defeating the `AND result IS NULL` guard that makes
 settlement terminal, a guard that `tests/test_parlay_grading_basis.py:123`
@@ -276,7 +276,7 @@ The whole thing is read-path only. `smoke_test.py` and `pytest` should be unmove
 `/api/price` number can shift.
 
 **Do not do (b).** It is worth +0.89u on a single row, it rewrites settled history, it moves
-the number in the product's own favour, and it contradicts both `replit.md` and the pattern
+the number in the product's own favour, and it contradicts both `notes/build-history/replit.md` and the pattern
 Tier 3 item 2 just set.
 
 ## 8. What I could not verify

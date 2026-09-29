@@ -2,17 +2,17 @@
 
 Product doctrine, stack, and gotchas are shared with Replit Agent and live in:
 
-@replit.md
+@notes/build-history/replit.md
 
 Read that first. Everything below is Claude-Code-specific and does not apply to Replit Agent.
 
 **Doctrine status (rewritten 2026-09-02):** the original *keyless data / no market prices /
-context never moves a price* doctrine was scratched on 2026-08-24. `replit.md` states the
+context never moves a price* doctrine was scratched on 2026-08-24. `notes/build-history/replit.md` states the
 revised position — what survives (calibration, the graded record, refusals, receipts, no
 hardcoded coefficients) and what is scratched (data purity: odds feeds, third-party
 sources, context signals moving prices). Do not enforce the old rules against
 `notes/v4-plan.md`. Older notes in `notes/` and everything in `attached_assets/` still quote
-the old doctrine; where they disagree with `replit.md`, `replit.md` wins.
+the old doctrine; where they disagree with `notes/build-history/replit.md`, `notes/build-history/replit.md` wins.
 
 ## Start here on a fresh session
 

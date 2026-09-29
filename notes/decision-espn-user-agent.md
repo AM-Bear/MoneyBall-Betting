@@ -164,7 +164,7 @@ those two routes, and it self-heals — one failure re-latches ESPN off for the 
 
 ## 3. Doctrine — can an ESPN headline reach a price? No. Traced.
 
-`replit.md` states media pulse is disclosed context that **never** moves a price. Verified
+`notes/build-history/replit.md` states media pulse is disclosed context that **never** moves a price. Verified
 independently, by call graph rather than by assertion:
 
 **Forward trace from the ESPN item.** `feeds.get_news()` (`feeds.py:567`) is called from

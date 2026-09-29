@@ -26,11 +26,11 @@ and 3 — they touch different code and neither depends on model work.
 
 ## Task 0 — Correct the doctrine documents (do before anything else)
 
-**Effort: S. Blocking.** `replit.md` and `CLAUDE.md` still state the doctrine this plan
+**Effort: S. Blocking.** `notes/build-history/replit.md` and `CLAUDE.md` still state the doctrine this plan
 supersedes:
 
-- `replit.md` — *"Keyless data only: MLB Stats API + MLB RSS ... no salary data served"*
-- `replit.md` — *"Media pulse and injury flags are disclosed context only; they NEVER move
+- `notes/build-history/replit.md` — *"Keyless data only: MLB Stats API + MLB RSS ... no salary data served"*
+- `notes/build-history/replit.md` — *"Media pulse and injury flags are disclosed context only; they NEVER move
   a price (doctrine)"*
 - `CLAUDE.md` — inherits both by reference
 
@@ -67,7 +67,7 @@ No vendor, no spend, no new dependency. Highest value-per-line-of-code in the pl
 `pnpm typecheck` green. 1.3 changes verdict output — add fixtures to
 `tests/test_verdict_engine.py` and hand-checked cases to `verified_stats.json`.
 1.1 touches the ledger: rows already graded at −110 stay at −110, marked as a distinct era
-via `model_version`. **Never rewrite existing rows** (`replit.md` gotcha).
+via `model_version`. **Never rewrite existing rows** (`notes/build-history/replit.md` gotcha).
 
 **Ships:** a product that can say "you are getting −135; the no-vig market says 56.1%; the
 model says 58.4%; that is a 2.3-point edge" — with no odds vendor.
@@ -176,7 +176,7 @@ external dependency.**
 | 6.7 | **Tamper-evident ledger** | T2 | M | Daily chained hash. Every tout claims a record; this one can be verified. |
 | 6.8 | **Segment the record** | T3 | M | By edge bucket, favourite/dog, home/away, month, model version. Will produce unflattering slices; publishing them is the point. |
 | 6.9 | **Free calculator tools** | §6.3 | S | No-vig, Kelly, parlay EV, hold. Trivial given `odds.py`, and they rank. |
-| 6.10 | **SEO targets** | §6.3 | S | `seo_strategy.md` lists primary keywords as "Unknown". |
+| 6.10 | **SEO targets** | §6.3 | S | `notes/build-history/seo_strategy.md` lists primary keywords as "Unknown". |
 | 6.11 | **Repricing the tiers** | §6.1 | M | ⛓ Phase 2. Current tiers split by research surface, not betting value. `parlay` is a 🎲 feature sitting in the top 🎯 tier. **The backtest is a pricing decision.** |
 
 ---

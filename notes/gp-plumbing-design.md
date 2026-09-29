@@ -56,7 +56,7 @@ Inside `get_standings()`'s loader, per team record:
 Three properties that matter:
 
 - `name` is resolved through the `/api/v1/teams` payload first (`feeds.py:697-702`), so
-  `code` is `_team_code(full_name)` — the replit.md rule is already honoured here.
+  `code` is `_team_code(full_name)` — the notes/build-history/replit.md rule is already honoured here.
 - The loader hard-fails unless all 30 teams are present (`feeds.py:727-728`:
   `if len(teams) != 30: raise FeedUnavailable(...)`). There is no partial-directory state.
 - It rides the ~10-minute `cache`, keyed `standings:{season}` (`feeds.py:731`).
@@ -511,7 +511,7 @@ ALTER TABLE moneyline_record_picks
 
 - `IF NOT EXISTS`, appended to the `statements` list in `ensure_schema`
   (`record_store.py:38-140`) — the tables predate the repo and no existing row may be
-  rewritten (replit.md gotcha).
+  rewritten (notes/build-history/replit.md gotcha).
 - **Nullable, never backfilled.** Same reasoning as the `model_version` comment at
   `record_store.py:119-122`: rows written before gp existed stay `NULL` rather than being
   stamped with a value nobody checked against them. Reconstructing gp for a past date from

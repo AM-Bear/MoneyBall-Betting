@@ -10,7 +10,7 @@ Companion reading: `notes/v3-plan.md` (what is broken, what is verified healthy)
 `notes/map-model.md` (the price chain formula by formula), `notes/map-data.md`,
 `notes/map-surface.md`.
 
-> ⚠️ **`replit.md` and `CLAUDE.md` are now out of date.** Both still state the doctrine
+> ⚠️ **`notes/build-history/replit.md` and `CLAUDE.md` are now out of date.** Both still state the doctrine
 > this document supersedes — "keyless data only", "media pulse and injury flags NEVER move
 > a price", "no salary data served". Updating them is task 0 in the plan; until then, a
 > fresh session will read the old rules and enforce them.
@@ -622,7 +622,7 @@ vocabulary is dense; this is the ramp from 🎲 to 🎯 and directly serves the 
 in §0.4.
 
 ### C7. Auto-generated SEO research content — Lift 2, Effort M, 🎲
-`seo_strategy.md` lists primary keywords as "Unknown". Per-team and per-matchup research
+`notes/build-history/seo_strategy.md` lists primary keywords as "Unknown". Per-team and per-matchup research
 pages would rank.
 
 Grudging: mass-generated content is a low-trust move and Google has gotten good at detecting
@@ -919,7 +919,7 @@ real money and costs the one asset that makes this product different — go in w
 
 - **The record is the marketing.** T1–T6 are growth features as much as trust features. A
   public, verifiable, unflattering-when-it-should-be record is a content engine.
-- **SEO**: `seo_strategy.md` lists primary keywords as "Unknown" — that is task one. Real
+- **SEO**: `notes/build-history/seo_strategy.md` lists primary keywords as "Unknown" — that is task one. Real
   targets exist: "[team] vs [team] prediction", "MLB model picks", "CLV calculator",
   "no-vig calculator", "MLB betting model". The de-vig calculator (M2) is a genuinely useful
   free tool that ranks and converts.
